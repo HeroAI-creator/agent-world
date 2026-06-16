@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Agent World</title>
+  </head>
+  <body>
+    <div id="app">
+      <div id="world-panel">
+        <div id="topbar">
+          <span id="title">🏘 Agent World</span>
+          <span id="clock"><span id="tod">🌅</span> <span id="clock-label">Day 1 · 06:00</span></span>
+          <span class="spacer"></span>
+          <button id="pause-btn" title="Pause/resume the simulation (freezes API spend)">⏸ Pause</button>
+          <select id="speed-select" title="Simulation speed">
+            <option value="0.5">0.5×</option>
+            <option value="1" selected>1×</option>
+            <option value="2">2×</option>
+          </select>
+          <span id="conn-dot" class="dot off" title="Server connection"></span>
+        </div>
+        <div id="game-container"></div>
+      </div>
+      <div id="side-panel">
+        <div id="agents-panel">
+          <div class="panel-head"><span class="panel-title">VILLAGERS</span></div>
+          <div id="agent-cards"></div>
+        </div>
+        <div id="log-region">
+          <div id="log-header">
+            <span class="panel-title">AGENT LOG</span>
+            <span class="spacer"></span>
+            <select id="filter-select" title="Filter by agent">
+              <option value="all">All agents</option>
+            </select>
+            <label class="autoscroll-label" title="Keep scrolled to the newest line">
+              <input type="checkbox" id="autoscroll-chk" checked /> autoscroll
+            </label>
+            <button id="clear-btn" title="Clear the log">✕</button>
+          </div>
+          <div id="log-lines"></div>
+        </div>
+        <div id="chat-bar">
+          <select id="chat-target" title="Who to speak to"></select>
+          <input id="chat-input" type="text" maxlength="240" placeholder="Speak to the village…" autocomplete="off" />
+          <button id="chat-send" title="Send (Enter)">Send</button>
+        </div>
+        <div id="log-stats">API: waiting for first stats…</div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,445 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: #0d1117;
+  color: #e6edf3;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  overflow: hidden;
+}
+
+#app {
+  display: flex;
+  height: 100vh;
+}
+
+/* ---- left: the world ---- */
+
+#world-panel {
+  flex: 0 0 60%;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+#topbar {
+  height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  background: #161b22;
+  border-bottom: 1px solid #30363d;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+#title {
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+#clock {
+  color: #8b949e;
+  font-variant-numeric: tabular-nums;
+}
+
+.spacer {
+  flex: 1;
+}
+
+button,
+select {
+  background: #21262d;
+  color: #e6edf3;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+button:hover,
+select:hover {
+  background: #30363d;
+}
+
+.dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.dot.on {
+  background: #3fb950;
+  box-shadow: 0 0 6px #3fb95088;
+}
+
+.dot.off {
+  background: #f85149;
+}
+
+#game-container {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  /* Phaser ENVELOP fills this panel; overflow hides the cropped canvas edges. */
+  background: radial-gradient(ellipse at center, #0e1c12 0%, #060c08 100%);
+  min-height: 0;
+  overflow: hidden;
+}
+
+#game-container canvas {
+  display: block;
+  max-width: none;
+  max-height: none;
+}
+
+
+/* ---- right: the agent log ---- */
+
+#side-panel {
+  flex: 1 1 40%;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid #30363d;
+  min-width: 380px;
+  background: #0d1117;
+  min-height: 0;
+}
+
+/* ---- villagers roster ---- */
+
+#agents-panel {
+  flex: 0 0 auto;
+  max-height: 42%;
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid #30363d;
+  background: #0c1119;
+}
+
+.panel-head {
+  height: 32px;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  background: #161b22;
+  flex-shrink: 0;
+}
+
+.panel-title {
+  font-family: 'Cascadia Code', Consolas, monospace;
+  font-size: 12px;
+  letter-spacing: 2px;
+  color: #8b949e;
+}
+
+#agent-cards {
+  overflow-y: auto;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.agent-card {
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-left-width: 3px;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+.ac-row1 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ac-name {
+  font-weight: 700;
+}
+
+.ac-state {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #8b949e;
+  background: #21262d;
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+.ac-energy {
+  margin-left: auto;
+  width: 54px;
+  height: 6px;
+  background: #10151c;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.ac-energy > i {
+  display: block;
+  height: 100%;
+  background: #3fb950;
+}
+
+.ac-act {
+  color: #c7d0d9;
+  margin-top: 3px;
+}
+
+.ac-think {
+  color: #8b8f98;
+  font-style: italic;
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ac-task {
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ac-task .chip {
+  font-size: 10px;
+  border-radius: 4px;
+  padding: 1px 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.chip.todo {
+  background: #3a2f1a;
+  color: #e3b341;
+}
+.chip.doing {
+  background: #16331f;
+  color: #6fd58a;
+}
+.chip.done {
+  background: #1c2a3a;
+  color: #79c0ff;
+}
+
+.ac-task .ttext {
+  color: #d6c08a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ac-task .none {
+  color: #5b626b;
+}
+
+.ac-edit {
+  margin-top: 6px;
+  display: flex;
+  gap: 4px;
+}
+
+.ac-edit[hidden] {
+  display: none;
+}
+
+.ac-edit input {
+  flex: 1;
+  min-width: 0;
+  background: #0d1117;
+  color: #e6edf3;
+  border: 1px solid #30363d;
+  border-radius: 5px;
+  padding: 4px 6px;
+  font-size: 12px;
+}
+
+.ac-edit button {
+  padding: 3px 8px;
+  font-size: 11px;
+}
+
+.ac-toggle {
+  cursor: pointer;
+  color: #6e7681;
+  font-size: 11px;
+  padding: 0 2px;
+  user-select: none;
+}
+
+.ac-toggle:hover {
+  color: #c7d0d9;
+}
+
+/* ---- log region ---- */
+
+#log-region {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+#log-header {
+  height: 36px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  background: #161b22;
+  border-bottom: 1px solid #30363d;
+  flex-shrink: 0;
+}
+
+.autoscroll-label {
+  font-size: 11px;
+  color: #8b949e;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  user-select: none;
+}
+
+#clear-btn {
+  padding: 2px 8px;
+}
+
+#log-lines {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 10px;
+  font-family: 'Cascadia Code', Consolas, 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+#log-lines .row {
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding: 1px 4px;
+  border-radius: 4px;
+}
+
+#log-lines .t {
+  color: #6e7681;
+}
+
+#log-lines .n {
+  font-weight: 700;
+}
+
+#log-lines .k-thought .x {
+  color: #b8c4ce;
+  font-style: italic;
+}
+
+#log-lines .k-action .x {
+  color: #e6edf3;
+}
+
+#log-lines .k-speech .x {
+  color: #ffdf8e;
+}
+
+#log-lines .k-observe {
+  opacity: 0.65;
+}
+
+#log-lines .k-system .x {
+  color: #7ee787;
+}
+
+#log-lines .k-warn {
+  background: rgba(248, 81, 73, 0.09);
+}
+
+#log-lines .k-warn .x {
+  color: #ffa198;
+}
+
+/* Overseer's own chat lines stand out from villager speech */
+#log-lines .k-speech .x:not(:empty) {
+  /* villager speech stays amber; overseer lines are logged as speech too but
+     prefixed "Overseer →", which reads fine in amber */
+}
+
+/* ---- chat bar ---- */
+
+#chat-bar {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 6px;
+  padding: 8px;
+  background: #10151c;
+  border-top: 1px solid #30363d;
+}
+
+#chat-target {
+  flex: 0 0 auto;
+  max-width: 116px;
+  font-size: 12px;
+}
+
+#chat-input {
+  flex: 1;
+  min-width: 0;
+  background: #0d1117;
+  color: #e6edf3;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 13px;
+}
+
+#chat-input:focus {
+  outline: none;
+  border-color: #4b93e6;
+}
+
+#chat-send {
+  flex: 0 0 auto;
+  background: #2d6cdf;
+  border-color: #2d6cdf;
+  font-weight: 600;
+}
+
+#chat-send:hover {
+  background: #3b7ef0;
+}
+
+#log-stats {
+  border-top: 1px solid #30363d;
+  padding: 7px 12px;
+  font-family: Consolas, monospace;
+  font-size: 11px;
+  color: #8b949e;
+  flex-shrink: 0;
+  background: #10151c;
+}
+
+/* scrollbar */
+#log-lines::-webkit-scrollbar {
+  width: 10px;
+}
+
+#log-lines::-webkit-scrollbar-thumb {
+  background: #30363d;
+  border-radius: 5px;
+}
+
+#log-lines::-webkit-scrollbar-track {
+  background: transparent;
+}
