@@ -9,8 +9,6 @@ export interface DashCallbacks {
   onClearTask(agentId: string): void;
   onChat(target: string, text: string): void;
   onSelectAgent(agentId: string): void;
-  /** Tessa's intake: a downscaled JPEG (base64, no data: prefix) + its filename. */
-  onIntake(dataB64: string, mediaType: string, filename: string): void;
 }
 
 interface CardRefs {
@@ -31,27 +29,6 @@ const cardsEl = document.getElementById('agent-cards') as HTMLDivElement;
 const chatTarget = document.getElementById('chat-target') as HTMLSelectElement;
 const chatInput = document.getElementById('chat-input') as HTMLInputElement;
 const chatSend = document.getElementById('chat-send') as HTMLButtonElement;
-const intakeBtn = document.getElementById('intake-btn') as HTMLButtonElement;
-const intakeFile = document.getElementById('intake-file') as HTMLInputElement;
-
-// Downscale a chosen image to a JPEG no larger than maxEdge on its long side,
-// then return raw base64 (no data: prefix). Keeps the WebSocket payload — and
-// the vision token cost — modest while staying sharp enough to read a form.
-async function fileToDownscaledJpegB64(file: File, maxEdge = 2000): Promise<string> {
-  const bitmap = await createImageBitmap(file);
-  const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height));
-  const w = Math.max(1, Math.round(bitmap.width * scale));
-  const h = Math.max(1, Math.round(bitmap.height * scale));
-  const canvas = document.createElement('canvas');
-  canvas.width = w;
-  canvas.height = h;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) throw new Error('canvas 2d context unavailable');
-  ctx.drawImage(bitmap, 0, 0, w, h);
-  bitmap.close?.();
-  const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
-  return dataUrl.slice(dataUrl.indexOf(',') + 1);
-}
 
 const DIR_ARROW: Record<Dir, string> = { down: '↓', left: '←', right: '→', up: '↑' };
 
@@ -169,24 +146,6 @@ export function initDash(agents: AgentInfo[], cb: DashCallbacks): void {
   chatSend.addEventListener('click', sendChat);
   chatInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') sendChat();
-  });
-
-  // Intake photo → Tessa. The 📋 button opens a file picker; the chosen image
-  // is downscaled and sent. Tessa reads it, drafts the documents, and emails them.
-  intakeBtn.addEventListener('click', () => intakeFile.click());
-  intakeFile.addEventListener('change', async () => {
-    const file = intakeFile.files?.[0];
-    intakeFile.value = ''; // allow re-selecting the same file later
-    if (!file) return;
-    intakeBtn.disabled = true;
-    try {
-      const b64 = await fileToDownscaledJpegB64(file);
-      cb.onIntake(b64, 'image/jpeg', file.name || 'intake.jpg');
-    } catch {
-      // createImageBitmap can reject on a non-image / corrupt file — ignore quietly.
-    } finally {
-      intakeBtn.disabled = false;
-    }
   });
 }
 

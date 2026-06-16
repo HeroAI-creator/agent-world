@@ -17,25 +17,24 @@ export interface Net {
   sendIntake(dataB64: string, mediaType: string, filename: string): void;
 }
 
+// Where the simulation server lives. In dev and single-host prod it's the same
+// origin (Vite proxies /ws → :3001; in prod the server serves the client). For a
+// split deploy — static client on Vercel, WS server on Railway — set
+// VITE_SERVER_URL at build time, e.g. VITE_SERVER_URL=https://agent-world.up.railway.app
+function wsEndpoint(): string {
+  const configured = import.meta.env.VITE_SERVER_URL?.trim();
+  if (configured) {
+    const u = new URL(configured);
+    const proto = u.protocol === 'https:' ? 'wss' : 'ws';
+    return `${proto}://${u.host}/ws`;
+  }
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  return `${proto}://${location.host}/ws`;
+}
+
 export function connect(handlers: NetHandlers): Net {
   let ws: WebSocket | null = null;
   let everInit = false;
-
-  // Where the simulation server lives. In dev and single-host prod it's the
-  // same origin (Vite proxies /ws → :3001; in prod the server serves the
-  // client). For a split deploy — static client on Vercel, WS server on
-  // Railway — set VITE_SERVER_URL at build time to the server's URL, e.g.
-  //   VITE_SERVER_URL=https://agent-world-production.up.railway.app
-  const wsEndpoint = (): string => {
-    const configured = import.meta.env.VITE_SERVER_URL?.trim();
-    if (configured) {
-      const u = new URL(configured);
-      const proto = u.protocol === 'https:' ? 'wss' : 'ws';
-      return `${proto}://${u.host}/ws`;
-    }
-    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    return `${proto}://${location.host}/ws`;
-  };
 
   const open = () => {
     ws = new WebSocket(wsEndpoint());

@@ -34,6 +34,13 @@ interface ViewMetrics {
   hitH: number;
 }
 
+interface LocationInfo {
+  name: string;
+  x: number;
+  y: number;
+  radius: number;
+}
+
 export class WorldScene extends Phaser.Scene {
   readonly cell: number;
   readonly worldW: number;
@@ -51,6 +58,8 @@ export class WorldScene extends Phaser.Scene {
     private readonly initData: InitData,
     private readonly onAgentClick: (agentId: string | null) => void,
     private readonly onDebugToggle: (visible: boolean) => void,
+    private readonly onLocationClick: (locationName: string) => void,
+    private readonly onJarvisOpen: () => void,
   ) {
     super({ key: 'world' });
     this.cell = initData.grid.cellPx;
@@ -95,6 +104,7 @@ export class WorldScene extends Phaser.Scene {
         .setStroke('#0a0d12', 4)
         .setDepth(40);
     }
+    this.createLocationHotspots();
 
     // Flickering glow over the campfire location
     const fire = this.initData.locations.find((l) => l.name === 'Campfire');
@@ -210,6 +220,40 @@ export class WorldScene extends Phaser.Scene {
     });
   }
 
+  private createLocationHotspots(): void {
+    for (const loc of this.initData.locations as LocationInfo[]) {
+      const cx = loc.x * this.cell + this.cell / 2;
+      const cy = loc.y * this.cell + this.cell / 2;
+      const w = Math.max(this.cell * loc.radius * 2.2, 96);
+      const h = Math.max(this.cell * loc.radius * 1.35, 64);
+      const halo = this.add
+        .ellipse(cx, cy, w, h, 0x32e6ff, 0.07)
+        .setStrokeStyle(2, 0x32e6ff, 0.3)
+        .setDepth(62)
+        .setVisible(false);
+      const zone = this.add.zone(cx, cy, w, h).setDepth(1700).setInteractive({ useHandCursor: true });
+
+      zone.on('pointerover', () => {
+        halo.setVisible(true);
+        this.tweens.killTweensOf(halo);
+        this.tweens.add({
+          targets: halo,
+          alpha: { from: 0.12, to: 0.25 },
+          scale: { from: 0.96, to: 1.04 },
+          duration: 650,
+          yoyo: true,
+          repeat: -1,
+          ease: 'Sine.easeInOut',
+        });
+      });
+      zone.on('pointerout', () => {
+        this.tweens.killTweensOf(halo);
+        halo.setScale(1).setAlpha(1).setVisible(false);
+      });
+      zone.on('pointerdown', () => this.onLocationClick(loc.name));
+    }
+  }
+
   private createJarvis(): void {
     if (!this.textures.exists('jarvis-fireball')) return;
 
@@ -221,7 +265,10 @@ export class WorldScene extends Phaser.Scene {
     this.jarvisCore = this.add.image(0, 0, 'jarvis-fireball').setOrigin(0.5, 0.58);
     this.jarvis = this.add.container(x, y, [this.jarvisGlow, this.jarvisCore]);
     this.jarvis.setDepth(1800).setScale(0.38).setSize(190, 250).setInteractive({ useHandCursor: true });
-    this.jarvis.on('pointerdown', () => this.wakeJarvis());
+    this.jarvis.on('pointerdown', () => {
+      this.wakeJarvis();
+      this.onJarvisOpen();
+    });
     this.startJarvisIdle();
   }
 
