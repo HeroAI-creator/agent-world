@@ -55,6 +55,10 @@ const net = connect({
         if (isJarvisWakePhrase(text)) scene?.wakeJarvis();
       },
       onSelectAgent: (id) => log.setFilter(id),
+      onIntake: (dataB64, mediaType, filename) => {
+        net.sendIntake(dataB64, mediaType, filename);
+        scene?.wakeJarvis();
+      },
     });
     log.appendSystem(`Connected. Model ${init.model}, 4h = 1 day. Assign tasks and chat from the panel; click a villager to filter their log.`);
     if (!init.hasKey) {

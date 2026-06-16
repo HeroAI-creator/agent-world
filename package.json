@@ -14,9 +14,12 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.104.1",
+    "docxtemplater": "^3.68.7",
     "dotenv": "^16.4.5",
     "express": "^4.21.2",
     "phaser": "^3.87.0",
+    "pizzip": "^3.2.0",
+    "resend": "^6.12.4",
     "tsx": "^4.19.2",
     "ws": "^8.18.0"
   },

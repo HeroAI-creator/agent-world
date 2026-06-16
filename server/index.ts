@@ -98,6 +98,10 @@ wss.on('connection', (ws) => {
         else if (msg.action === 'clear') sim.clearTask(msg.agentId);
       } else if (msg.type === 'chat') {
         if (typeof msg.text === 'string' && typeof msg.target === 'string') sim.handleChat(msg.target, msg.text);
+      } else if (msg.type === 'intake') {
+        if (typeof msg.dataB64 === 'string' && msg.dataB64.length > 0) {
+          void sim.handleIntake(msg.dataB64, msg.mediaType || 'image/jpeg', msg.filename || 'intake.jpg');
+        }
       }
     } catch {
       // ignore malformed client messages

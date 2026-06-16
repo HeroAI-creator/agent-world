@@ -8,6 +8,7 @@
 // agent crosses cleanly on the planks instead of wandering onto the water.
 
 import { Agent, type CurrentAction } from './agent.js';
+import { emailIntake, fillTemplates } from './intake.js';
 import * as llm from './llm.js';
 import { cellsToPixels, followPath, getDirectionFromDelta } from './movement.js';
 import {
@@ -596,6 +597,84 @@ export class Simulation {
       const ack = '…(looks up, listening)';
       this.send({ type: 'bubble', agentId: a.id, text: ack, durationMs: 2500 });
       this.log({ agent: a, icon: '💬', kind: 'speech', text: ack });
+    }
+  }
+
+  // ---- Armada intake (Tessa drafts the documents and emails them) ----
+
+  private bubble(a: Agent, text: string, ms: number): void {
+    this.send({ type: 'bubble', agentId: a.id, text, durationMs: Math.round(ms / this.speed) });
+  }
+
+  /** Tessa's job: read an intake photo, fill the Welcome Letter + Notice to
+   *  Insurance, and email them to the firm — narrating each step as she works. */
+  async handleIntake(imageB64: string, mediaType: string, filename: string): Promise<void> {
+    const tessa = this.agentById('tessa');
+    if (!tessa) return;
+
+    this.log({ agent: tessa, icon: '📋', kind: 'system', text: `receives an intake photo (${filename}) — heading to the Market Stall to process it` });
+    this.bubble(tessa, '📋 A new intake! Let me read this over…', 4500);
+    tessa.addMemory(this.tick, `Received an intake photo (${filename}) to process for Armada.`);
+    tessa.task = { text: `Process intake: ${filename}`, status: 'doing', assignedTick: this.tick, note: 'Reading the form…' };
+
+    // Send her to the stall to "work" while the pipeline runs.
+    if (tessa.state !== 'talking') {
+      tessa.decisionToken++;
+      tessa.clearPath();
+      const stall = this.world.resolveLocation('Market Stall');
+      if (stall) this.startTravel(tessa, 'work', stall, 30);
+    }
+
+    try {
+      const fields = await llm.extractIntakeFields(imageB64, mediaType);
+      const summary = [
+        fields.insured_name || 'unknown insured',
+        fields.cause_of_loss && `${fields.cause_of_loss} loss`,
+        fields.claim_number && `claim ${fields.claim_number}`,
+      ]
+        .filter(Boolean)
+        .join(' · ');
+      this.log({ agent: tessa, icon: '🔎', kind: 'system', text: `read the intake — ${summary}` });
+      this.bubble(tessa, `Got it — ${fields.insured_name || 'new client'}. Drafting the Welcome Letter & carrier Notice…`, 5000);
+      if (tessa.task) tessa.task.note = `Read: ${summary}`;
+
+      const docs = fillTemplates(fields);
+      this.log({ agent: tessa, icon: '📝', kind: 'system', text: `filled the Welcome Letter + Notice to Insurance for ${fields.insured_name || 'the insured'}` });
+
+      const result = await emailIntake(fields, docs);
+      if (result.sent) {
+        this.log({ agent: tessa, icon: '📧', kind: 'system', text: `emailed both documents to ${result.to}${result.id ? ` (Resend ${result.id})` : ''}` });
+        this.bubble(tessa, `📧 Sent to ${result.toShort}! All done.`, 5000);
+        tessa.addMemory(this.tick, `Drafted and emailed the welcome letter + carrier notice for ${fields.insured_name || 'a new client'}.`);
+        if (tessa.task) {
+          tessa.task.status = 'done';
+          tessa.task.note = `Sent to ${result.toShort}`;
+        }
+      } else {
+        this.log({ agent: tessa, icon: '📧', kind: 'warn', text: `drafted both documents but did not email them — ${result.reason}` });
+        this.bubble(tessa, "Drafted both documents — but email isn't set up yet.", 5000);
+        if (tessa.task) {
+          tessa.task.status = 'done';
+          tessa.task.note = 'Drafted (email not configured)';
+        }
+      }
+    } catch (err) {
+      const reason = err instanceof llm.LlmUnavailableError ? err.reason : 'api_error';
+      if (err instanceof llm.LlmUnavailableError) this.warnLlmFailure(err);
+      const why =
+        reason === 'no_key'
+          ? "I can't read it without an API key."
+          : reason === 'auth'
+            ? 'the API key was rejected.'
+            : reason === 'rate_limit_local'
+              ? "I'm a bit overwhelmed — try again in a moment."
+              : "I couldn't read that one.";
+      this.log({ agent: tessa, icon: '⚠️', kind: 'warn', text: `couldn't process the intake: ${(err as Error).message}` });
+      this.bubble(tessa, `Hmm — ${why}`, 5000);
+      if (tessa.task) {
+        tessa.task.status = 'todo';
+        tessa.task.note = 'Could not read the form';
+      }
     }
   }
 

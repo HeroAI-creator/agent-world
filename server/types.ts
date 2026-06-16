@@ -167,4 +167,28 @@ export interface ClientChatMsg {
   text: string;
 }
 
-export type ClientMsg = ClientControlMsg | ClientTaskMsg | ClientChatMsg;
+/** An intake photo handed to Tessa: base64 image data (no data: prefix) + mime. */
+export interface ClientIntakeMsg {
+  type: 'intake';
+  dataB64: string;
+  mediaType: string;
+  filename: string;
+}
+
+export type ClientMsg = ClientControlMsg | ClientTaskMsg | ClientChatMsg | ClientIntakeMsg;
+
+// ---- Armada intake extraction ----
+
+/** Fields read off an Armada Public Adjusting claim intake form. All strings;
+ *  "" when the field isn't present on the form (never null, to keep templating simple). */
+export interface IntakeFields {
+  insured_name: string;
+  loss_address: string;
+  policy_number: string;
+  claim_number: string;
+  date_of_loss: string;
+  cause_of_loss: string;
+  carrier: string;
+  phone: string;
+  email: string;
+}

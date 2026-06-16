@@ -13,6 +13,8 @@ export interface Net {
   sendControl(action: 'toggle_pause' | 'set_speed', value?: number): void;
   sendTask(action: 'assign' | 'clear', agentId: string, text?: string): void;
   sendChat(target: string, text: string): void;
+  /** Hand an intake photo to Tessa: base64 (no data: prefix) + its mime type. */
+  sendIntake(dataB64: string, mediaType: string, filename: string): void;
 }
 
 export function connect(handlers: NetHandlers): Net {
@@ -83,6 +85,9 @@ export function connect(handlers: NetHandlers): Net {
     },
     sendChat(target, text) {
       send({ type: 'chat', target, text });
+    },
+    sendIntake(dataB64, mediaType, filename) {
+      send({ type: 'intake', dataB64, mediaType, filename });
     },
   };
 }
