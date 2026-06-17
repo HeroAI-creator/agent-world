@@ -32,28 +32,33 @@ function buildWalkable(grid: GridInfo): boolean[][] {
   return walk;
 }
 
-/** 4-directional A* over the walkable grid. Returns a cell path incl. start & goal, or null. */
+/** 4-directional A* over the walkable grid. Returns a cell path incl. start & goal.
+ *  If the goal sits in a region disconnected from the start (e.g. across water), it
+ *  returns a best-effort path to the reachable cell nearest the goal, so a click that
+ *  can't be satisfied exactly still walks the avatar as close as it can get. */
 function aStar(walk: boolean[][], cols: number, rows: number, start: Cell, goal: Cell): Cell[] | null {
   const ok = (x: number, y: number) => x >= 0 && y >= 0 && x < cols && y < rows && walk[y][x];
-  if (!ok(goal.x, goal.y)) return null;
   const key = (x: number, y: number) => y * cols + x;
-  const open: Array<{ x: number; y: number; f: number; g: number }> = [{ x: start.x, y: start.y, f: 0, g: 0 }];
+  const h = (x: number, y: number) => Math.abs(x - goal.x) + Math.abs(y - goal.y);
+  const open: Array<{ x: number; y: number; f: number; g: number }> = [{ x: start.x, y: start.y, f: h(start.x, start.y), g: 0 }];
   const came = new Map<number, number>();
   const gScore = new Map<number, number>([[key(start.x, start.y), 0]]);
-  const h = (x: number, y: number) => Math.abs(x - goal.x) + Math.abs(y - goal.y);
+  let bestKey = key(start.x, start.y);
+  let bestH = h(start.x, start.y);
+  const rebuild = (endKey: number): Cell[] => {
+    const path: Cell[] = [];
+    let k: number | undefined = endKey;
+    while (k !== undefined) {
+      path.push({ x: k % cols, y: Math.floor(k / cols) });
+      k = came.get(k);
+    }
+    return path.reverse();
+  };
   while (open.length) {
     let bi = 0;
     for (let i = 1; i < open.length; i++) if (open[i].f < open[bi].f) bi = i;
     const cur = open.splice(bi, 1)[0];
-    if (cur.x === goal.x && cur.y === goal.y) {
-      const path: Cell[] = [];
-      let k: number | undefined = key(cur.x, cur.y);
-      while (k !== undefined) {
-        path.push({ x: k % cols, y: Math.floor(k / cols) });
-        k = came.get(k);
-      }
-      return path.reverse();
-    }
+    if (cur.x === goal.x && cur.y === goal.y) return rebuild(key(cur.x, cur.y));
     for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
       const nx = cur.x + dx, ny = cur.y + dy;
       if (!ok(nx, ny)) continue;
@@ -62,11 +67,14 @@ function aStar(walk: boolean[][], cols: number, rows: number, start: Cell, goal:
       if (ng < (gScore.get(nk) ?? Infinity)) {
         came.set(nk, key(cur.x, cur.y));
         gScore.set(nk, ng);
-        open.push({ x: nx, y: ny, g: ng, f: ng + h(nx, ny) });
+        const hh = h(nx, ny);
+        open.push({ x: nx, y: ny, g: ng, f: ng + hh });
+        if (hh < bestH) { bestH = hh; bestKey = nk; }
       }
     }
   }
-  return null;
+  // Goal unreachable — walk to the reachable cell closest to the click.
+  return rebuild(bestKey);
 }
 
 export class Player {
@@ -148,40 +156,38 @@ export class Player {
     const path = aStar(this.walk, this.cols, this.rows, this.cell, goal);
     if (!path || path.length < 2) return;
     this.scene.tweens.killTweensOf(this.container);
-    const tweens: Phaser.Types.Tweens.TweenBuilderConfig[] = [];
-    for (let i = 1; i < path.length; i++) {
-      const from = path[i - 1];
-      const to = path[i];
-      const dx = to.x - from.x;
-      const dy = to.y - from.y;
-      const dir = this.dirOf(dx, dy);
-      const tx = to.x * this.cellPx + this.cellPx / 2;
-      const tyFeet = to.y * this.cellPx + this.cellPx / 2;
-      const dur = (Math.hypot(dx, dy) * this.cellPx) / SPEED * 1000;
-      tweens.push({
-        x: tx,
-        y: tyFeet - SHADOW_Y,
-        duration: dur,
-        ease: 'Linear',
-        onStart: () => {
-          this.lastDir = dir;
-          this.sprite.play(`walk-player-${dir}`, true);
-        },
-        onUpdate: () => {
-          this.px = this.container.x;
-          this.py = this.container.y + SHADOW_Y;
-          this.container.setDepth(100 + Math.round(this.py));
-        },
-      });
+    const pts = path.map((c) => ({ x: c.x * this.cellPx + this.cellPx / 2, y: c.y * this.cellPx + this.cellPx / 2 }));
+    this.walkStep(pts, 1);
+  }
+
+  /** Walk one segment at a time (plain per-waypoint tweens — same proven path the
+   *  agents use), recursing to the next waypoint on complete. */
+  private walkStep(pts: Point[], i: number): void {
+    if (i >= pts.length) {
+      this.sprite.anims.stop();
+      this.sprite.setTexture(frameKey(this.lastDir, 0));
+      return;
     }
-    this.scene.tweens.chain({
+    const to = pts[i];
+    const dir = this.dirOf(to.x - this.px, to.y - this.py);
+    this.lastDir = dir;
+    this.sprite.play(`walk-player-${dir}`, true);
+    const dur = Math.max(60, (Math.hypot(to.x - this.px, to.y - this.py) / SPEED) * 1000);
+    this.scene.tweens.add({
       targets: this.container,
-      tweens,
+      x: to.x,
+      y: to.y - SHADOW_Y,
+      duration: dur,
+      ease: 'Linear',
+      onUpdate: () => {
+        this.px = this.container.x;
+        this.py = this.container.y + SHADOW_Y;
+        this.container.setDepth(100 + Math.round(this.py));
+      },
       onComplete: () => {
         this.px = this.container.x;
         this.py = this.container.y + SHADOW_Y;
-        this.sprite.anims.stop();
-        this.sprite.setTexture(frameKey(this.lastDir, 0));
+        this.walkStep(pts, i + 1);
       },
     });
   }

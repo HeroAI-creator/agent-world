@@ -71,6 +71,10 @@ export class WorldScene extends Phaser.Scene {
   }
 
   preload(): void {
+    // Load every asset in a single batch. With ~43 files the default 32-file
+    // cap forces a second batch that can stall on throttled/background tabs;
+    // a high cap keeps the whole scene loading as one pass.
+    this.load.maxParallelDownloads = 128;
     this.load.image('bg', 'assets/background.png');
     this.load.image('jarvis-fireball', 'assets/jarvis_fireball.png');
     // Optional front-railing overlay drawn ABOVE agents so the bridge looks
