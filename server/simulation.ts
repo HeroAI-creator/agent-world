@@ -489,8 +489,18 @@ export class Simulation {
    *  and conversation LLM calls never fire — zero idle token spend. */
   private idleRoam(a: Agent): void {
     a.needsDecision = false;
-    // ~40% stroll to a DIFFERENT named place (a real walk, never a 0-step loop);
-    // otherwise wander in place for a while. Both are multi-tick, so no log spam.
+    // With a task assigned, head to your OWN workspace (your spawn location) and work.
+    if (a.task && a.task.status !== 'done') {
+      const ws = this.world.resolveLocation(a.seed.spawn);
+      if (ws) {
+        a.task.status = 'doing';
+        a.task.note = `Working at the ${ws.name}.`;
+        this.startTravel(a, 'work', ws, 14);
+        return;
+      }
+    }
+    // Otherwise amble for free: ~40% stroll to a DIFFERENT named place (a real
+    // walk, never a 0-step loop); otherwise wander in place. Both are multi-tick.
     if (Math.random() < 0.4) {
       const here = this.world.locationNameAt(a.cell);
       const choices = this.world.locations.filter((l) => l.name !== here);
@@ -531,18 +541,17 @@ export class Simulation {
     a.addMemory(this.tick, `The Overseer assigned me a task: "${clean}".`);
     this.log({ agent: a, icon: '🎯', kind: 'system', text: `assigned a task: "${clean}"` });
 
-    // "Both" mode: if the text names something concrete, act on it right now.
-    const directive = this.parseTaskDirective(clean);
+    // A tasked agent heads to its own workspace (its spawn location) and works
+    // there until the task is cleared. No API call needed — works in idle mode.
     if (a.state !== 'talking') {
       a.decisionToken++;
       a.clearPath();
-      if (directive) {
+      const ws = this.world.resolveLocation(a.seed.spawn);
+      if (ws) {
         a.lastThought = `On it: ${clean}`;
-        this.applyDecision(a, directive);
-        if (a.currentAction) a.currentAction.fulfillsTask = true;
-        else this.markTaskDone(a); // directive was a no-op (already there) → done
+        a.task.note = `Heading to the ${ws.name} to work.`;
+        this.startTravel(a, 'work', ws, 14);
       } else {
-        // No concrete directive — let the AI pursue it on the next decision.
         a.currentAction = null;
         a.state = 'idle';
         a.needsDecision = true;
