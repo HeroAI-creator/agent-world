@@ -13,6 +13,7 @@ import Phaser from 'phaser';
 import { DebugGrid } from '../debugGrid';
 import type { AgentInfo, AgentSnapshot, BubbleMsg, Dir, InitData, TickMsg } from '../types';
 import { ensureCharTexture } from '../textures';
+import { Player } from '../player';
 
 const DIRS: Dir[] = ['down', 'left', 'right', 'up'];
 
@@ -52,6 +53,7 @@ export class WorldScene extends Phaser.Scene {
   private jarvisCore: Phaser.GameObjects.Image | null = null;
   private jarvisGlow: Phaser.GameObjects.Arc | null = null;
   private jarvisBaseY = 0;
+  private player: Player | null = null;
   private ready = false;
 
   constructor(
@@ -60,6 +62,7 @@ export class WorldScene extends Phaser.Scene {
     private readonly onDebugToggle: (visible: boolean) => void,
     private readonly onLocationClick: (locationName: string) => void,
     private readonly onJarvisOpen: () => void,
+    private readonly onReady?: () => void,
   ) {
     super({ key: 'world' });
     this.cell = initData.grid.cellPx;
@@ -73,6 +76,10 @@ export class WorldScene extends Phaser.Scene {
     // Optional front-railing overlay drawn ABOVE agents so the bridge looks
     // layered (agent walks between the back and front railing). No-ops if absent.
     this.load.image('bridge-overlay', 'assets/bridge_overlay.png');
+    for (const dir of DIRS) {
+      this.load.image(`walk-player-${dir}-0`, `assets/player_${dir}_0.png`);
+      this.load.image(`walk-player-${dir}-1`, `assets/player_${dir}_1.png`);
+    }
     for (const a of this.initData.agents) {
       for (const dir of DIRS) {
         this.load.image(frameKey(a.id, dir, 0), `assets/${a.id}_${dir}_0.png`);
@@ -142,15 +149,30 @@ export class WorldScene extends Phaser.Scene {
       this.onDebugToggle(visible);
     });
 
-    // Click on empty ground clears the log filter
+    // The player avatar — click-to-move. Starts on the open plaza near the fire.
+    this.player = new Player(this, this.initData.grid, this.playerSpawnCell());
+
+    // Click on empty ground: clear the log filter AND walk the player there.
     this.input.on(
       'pointerdown',
-      (_p: Phaser.Input.Pointer, over: Phaser.GameObjects.GameObject[]) => {
-        if (over.length === 0) this.onAgentClick(null);
+      (p: Phaser.Input.Pointer, over: Phaser.GameObjects.GameObject[]) => {
+        if (over.length === 0) {
+          this.onAgentClick(null);
+          this.player?.moveToPixel(p.worldX, p.worldY);
+        }
       },
     );
 
     this.ready = true;
+    this.onReady?.();
+  }
+
+  /** A walkable cell near the village centre for the player to start on. */
+  private playerSpawnCell(): { x: number; y: number } {
+    const fire = this.initData.locations.find((l) => l.name === 'Campfire');
+    return fire
+      ? { x: fire.x - 3, y: fire.y + 4 }
+      : { x: Math.floor(this.initData.grid.cols / 2), y: Math.floor(this.initData.grid.rows / 2) };
   }
 
   private drawPlaceholder(): void {
@@ -250,7 +272,10 @@ export class WorldScene extends Phaser.Scene {
         this.tweens.killTweensOf(halo);
         halo.setScale(1).setAlpha(1).setVisible(false);
       });
-      zone.on('pointerdown', () => this.onLocationClick(loc.name));
+      zone.on('pointerdown', () => {
+        this.onLocationClick(loc.name);
+        this.player?.moveToCell({ x: loc.x, y: loc.y });
+      });
     }
   }
 

@@ -4,9 +4,64 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Agent World</title>
+    <style>
+      #loading-screen {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: radial-gradient(circle at 50% 38%, #15271b 0%, #0a120c 68%, #060907 100%);
+        transition: opacity 0.5s ease, visibility 0.5s ease;
+      }
+      #loading-screen.hidden {
+        opacity: 0;
+        visibility: hidden;
+      }
+      #loading-screen .loading-inner {
+        text-align: center;
+        color: #eef3ea;
+        font-family: Georgia, 'Times New Roman', serif;
+      }
+      #loading-screen .loading-title {
+        font-size: 46px;
+        letter-spacing: 2px;
+        text-shadow: 0 0 20px rgba(255, 160, 48, 0.55);
+        margin-bottom: 24px;
+      }
+      #loading-screen .loading-spinner {
+        width: 42px;
+        height: 42px;
+        margin: 0 auto;
+        border: 3px solid rgba(255, 255, 255, 0.14);
+        border-top-color: #ffa030;
+        border-radius: 50%;
+        animation: aw-spin 0.9s linear infinite;
+      }
+      #loading-screen .loading-sub {
+        margin-top: 18px;
+        font-size: 13px;
+        letter-spacing: 1px;
+        color: #9fb4a3;
+        font-family: Consolas, monospace;
+      }
+      @keyframes aw-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
   </head>
   <body>
     <div id="app">
+      <div id="loading-screen">
+        <div class="loading-inner">
+          <div class="loading-title">🏘 Agent World</div>
+          <div class="loading-spinner"></div>
+          <div class="loading-sub">entering the village…</div>
+        </div>
+      </div>
       <div id="world-panel">
         <div id="topbar">
           <span id="title">🏘 Agent World</span>

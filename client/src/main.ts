@@ -15,6 +15,7 @@ const todLabel = document.getElementById('tod') as HTMLSpanElement;
 const connDot = document.getElementById('conn-dot') as HTMLSpanElement;
 const filterSel = document.getElementById('filter-select') as HTMLSelectElement;
 const appEl = document.getElementById('app') as HTMLDivElement;
+const loadingScreen = document.getElementById('loading-screen') as HTMLDivElement;
 const sideCollapseBtn = document.getElementById('side-collapse-btn') as HTMLButtonElement;
 const sideReopenBtn = document.getElementById('side-reopen-btn') as HTMLButtonElement;
 const locationPopover = document.getElementById('location-popover') as HTMLElement;
@@ -227,6 +228,7 @@ const net = connect({
       (visible) => log.appendSystem(`Debug overlay ${visible ? 'ON' : 'OFF'} (G to toggle) — tune server/worldConfig.ts to match the image.`),
       showLocation,
       openJarvisPanel,
+      () => loadingScreen.classList.add('hidden'),
     );
     game = new Phaser.Game({
       type: Phaser.AUTO,
