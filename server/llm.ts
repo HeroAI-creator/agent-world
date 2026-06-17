@@ -92,10 +92,10 @@ export async function complete(opts: { system: string; user: string; maxTokens: 
 //
 // A photo of a claim intake form is read by a vision-capable model that is
 // FORCED to call one tool, so the result is always a structured object (no
-// brittle JSON-from-prose parsing). Defaults to Opus 4.8 for the most reliable
-// OCR on phone photos / handwriting; override with INTAKE_MODEL (e.g. set it to
-// claude-haiku-4-5 if your key lacks Opus access).
-export const INTAKE_MODEL = process.env.INTAKE_MODEL?.trim() || 'claude-opus-4-8';
+// brittle JSON-from-prose parsing). Defaults to Haiku 4.5 to keep every agent on
+// the same cheap model. Opus 4.8 reads phone photos / handwriting more reliably —
+// if intake extraction starts missing fields, set INTAKE_MODEL=claude-opus-4-8.
+export const INTAKE_MODEL = process.env.INTAKE_MODEL?.trim() || 'claude-haiku-4-5-20251001';
 
 type ImageMediaType = 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
 
