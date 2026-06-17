@@ -192,3 +192,19 @@ export interface IntakeFields {
   phone: string;
   email: string;
 }
+
+// ---- Mira scheduling agent ----
+
+/** One stop parsed from the text the user pastes to Mira. */
+export interface Appointment {
+  /** Client name / label for the visit ('' if none given). */
+  title: string;
+  /** Street address of the stop (required to route it). */
+  address: string;
+  /** Date, normalized to YYYY-MM-DD when the year is clear, else as written, else ''. */
+  date: string;
+  /** Fixed start time as 24h HH:MM if the user specified one, else ''. */
+  time: string;
+  /** Visit length in minutes if stated, else 0 (a default is applied when scheduling). */
+  durationMin: number;
+}

@@ -10,6 +10,7 @@
 import { Agent, type CurrentAction } from './agent.js';
 import { emailIntake, fillTemplates } from './intake.js';
 import * as llm from './llm.js';
+import { scheduleAppointments } from './scheduling.js';
 import { cellsToPixels, followPath, getDirectionFromDelta } from './movement.js';
 import {
   conversationSystem,
@@ -20,7 +21,7 @@ import {
   parseDecision,
 } from './prompts.js';
 import { overseerReplySystem, overseerReplyUser, parseReply } from './prompts.js';
-import type { DecisionResult, LogEvent, LogKind, Point, ServerMsg } from './types.js';
+import type { Appointment, DecisionResult, LogEvent, LogKind, Point, ServerMsg } from './types.js';
 import type { LocationCfg, RiverSide, World } from './world.js';
 
 const DAY_REAL_MS = 4 * 60 * 60 * 1000; // 4 real hours = 1 virtual day (at 1x speed)
@@ -612,7 +613,12 @@ export class Simulation {
     }
 
     for (const a of recipients) a.addMemory(this.tick, `The Overseer said: "${clean}".`);
-    if (responder) void this.generateReply(responder, clean);
+    if (responder) {
+      // A message aimed straight at Mira is treated as a routing/scheduling request;
+      // she falls back to a normal reply if it isn't actually a list of stops.
+      if (target !== 'all' && responder.id === 'mira') void this.handleMiraSchedule(responder, clean);
+      else void this.generateReply(responder, clean);
+    }
   }
 
   private async generateReply(a: Agent, message: string): Promise<void> {
@@ -716,6 +722,73 @@ export class Simulation {
       if (tessa.task) {
         tessa.task.status = 'todo';
         tessa.task.note = 'Could not read the form';
+      }
+    }
+  }
+
+  // ---- Mira scheduling (route optimization + Outlook + email) ----
+
+  /** Mira's job: read pasted appointments, optimize the driving route, put the
+   *  visits on Outlook in that order, and email the firm the route — narrating
+   *  as she works. Falls back to a normal chat reply if the message isn't stops. */
+  async handleMiraSchedule(mira: Agent, text: string): Promise<void> {
+    let appts: Appointment[];
+    try {
+      appts = await llm.extractAppointments(text, new Date().toISOString().slice(0, 10));
+    } catch (err) {
+      this.warnLlmFailure(err as llm.LlmUnavailableError);
+      this.bubble(mira, "I couldn't read that just now — try again in a moment.", 4000);
+      return;
+    }
+    if (appts.length === 0) {
+      // Not a routing request — answer like a normal villager.
+      void this.generateReply(mira, text);
+      return;
+    }
+
+    this.log({ agent: mira, icon: '🗺️', kind: 'system', text: `received ${appts.length} stop(s) to route + schedule` });
+    this.bubble(mira, `Got ${appts.length} stop${appts.length === 1 ? '' : 's'} — plotting the best route…`, 4500);
+    mira.addMemory(this.tick, `Asked to route + schedule ${appts.length} stops.`);
+    mira.task = { text: `Route + schedule ${appts.length} stops`, status: 'doing', assignedTick: this.tick, note: 'Optimizing the route…' };
+
+    // Send her to her workspace (the Cottage) to "work" while the pipeline runs.
+    if (mira.state !== 'talking') {
+      mira.decisionToken++;
+      mira.clearPath();
+      const ws = this.world.resolveLocation(mira.seed.spawn);
+      if (ws) this.startTravel(mira, 'work', ws, 30);
+    }
+
+    try {
+      const result = await scheduleAppointments(appts);
+      const { eventsCreated: created, eventsFailed: failed } = result;
+      const dayLine = result.days
+        .map((d) => `${d.date}: ${d.stops.length} stop${d.stops.length === 1 ? '' : 's'}${d.optimized ? ` (~${d.totalDriveMin} min driving)` : ''}`)
+        .join(' · ');
+      this.log({ agent: mira, icon: '🧭', kind: 'system', text: `optimized route — ${dayLine}` });
+
+      if (created) this.bubble(mira, `📅 Scheduled ${created} visit${created === 1 ? '' : 's'} on Outlook${failed ? `, ${failed} couldn't be added` : ''}.`, 5000);
+      if (result.email.sent) {
+        this.log({ agent: mira, icon: '📧', kind: 'system', text: `emailed the route to ${result.email.to}${result.email.id ? ` (Resend ${result.email.id})` : ''}` });
+        this.bubble(mira, `📧 Sent the route to ${result.email.to}.${created ? ' All set!' : ''}`, 5000);
+      } else {
+        this.log({ agent: mira, icon: '📧', kind: 'warn', text: `route built but not emailed — ${result.email.reason}` });
+        if (!created) this.bubble(mira, `Routed the stops, but couldn't schedule or email yet — ${result.email.reason}.`, 5500);
+      }
+
+      mira.addMemory(this.tick, `Routed ${appts.length} stops; ${created} scheduled on Outlook; ${result.email.sent ? 'emailed the route' : 'email not sent'}.`);
+      mira.task = {
+        text: `Routed ${appts.length} stops`,
+        status: 'done',
+        assignedTick: this.tick,
+        note: `${created} on Outlook · ${result.email.sent ? 'emailed' : 'not emailed'}`,
+      };
+    } catch (err) {
+      this.log({ agent: mira, icon: '⚠️', kind: 'warn', text: `scheduling failed: ${(err as Error).message}` });
+      this.bubble(mira, `Hmm — I hit a snag routing those: ${(err as Error).message}`, 5500);
+      if (mira.task) {
+        mira.task.status = 'todo';
+        mira.task.note = 'Routing failed';
       }
     }
   }

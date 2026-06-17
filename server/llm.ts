@@ -2,7 +2,7 @@
 // All LLM access happens here, server-side only. The key never reaches the browser.
 
 import Anthropic from '@anthropic-ai/sdk';
-import type { IntakeFields, LlmStats } from './types.js';
+import type { Appointment, IntakeFields, LlmStats } from './types.js';
 
 // Claude Haiku 4.5 pricing, $ per million tokens.
 const PRICE_IN_PER_MTOK = 1.0;
@@ -181,6 +181,86 @@ export async function extractIntakeFields(imageB64: string, mediaType: string): 
       throw new LlmUnavailableError('model did not return structured intake fields', 'api_error');
     }
     return normalizeIntake(block.input as Partial<Record<keyof IntakeFields, unknown>>);
+  } catch (err) {
+    throw toLlmError(err);
+  }
+}
+
+// ---- Mira scheduling: parse pasted appointments ----
+//
+// The user pastes a free-form list of stops ("Tue 6/24 9am — 123 Main St,
+// Brooksville; then 456 Oak Ave at 11…"). A forced tool call turns it into a
+// clean array so the router/scheduler has structured addresses + dates.
+
+const APPOINTMENTS_TOOL: Anthropic.Tool = {
+  name: 'record_appointments',
+  description: 'Record the list of property visits / appointments the user wants routed and scheduled.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      appointments: {
+        type: 'array',
+        description: 'Every distinct stop found in the text. Empty array if the text is not a list of appointments.',
+        items: {
+          type: 'object',
+          properties: {
+            title: { type: 'string', description: 'Client name or label for the visit. Empty string if none.' },
+            address: { type: 'string', description: 'Full street address of the stop, as complete as given.' },
+            date: { type: 'string', description: 'Visit date as YYYY-MM-DD when the year is clear; otherwise exactly as written; empty string if no date.' },
+            time: { type: 'string', description: 'Fixed start time in 24-hour HH:MM if the user specified one, else empty string.' },
+            durationMin: { type: 'number', description: 'Visit length in minutes if stated, else 0.' },
+          },
+          required: ['title', 'address', 'date', 'time', 'durationMin'],
+        },
+      },
+    },
+    required: ['appointments'],
+  },
+};
+
+export async function extractAppointments(text: string, today: string): Promise<Appointment[]> {
+  pruneWindow();
+  if (callTimes.length >= maxCallsPerMin()) {
+    throw new LlmUnavailableError(`local rate cap reached (${maxCallsPerMin()} calls/min)`, 'rate_limit_local');
+  }
+  const anthropic = getClient();
+  callTimes.push(Date.now());
+  totals.calls += 1;
+  try {
+    const response = await anthropic.messages.create({
+      model: MODEL,
+      max_tokens: 1500,
+      tools: [APPOINTMENTS_TOOL],
+      tool_choice: { type: 'tool', name: 'record_appointments' },
+      messages: [
+        {
+          role: 'user',
+          content:
+            `Today is ${today}. Extract every property visit / appointment from the following text for a public ` +
+            'adjusting field route. Call record_appointments with one entry per stop, copying addresses exactly. ' +
+            'Resolve relative or partial dates (e.g. "next Tuesday", "6/24") to absolute YYYY-MM-DD using today\'s ' +
+            'date. If the text is not a list of stops, return an empty array. Do not invent stops.\n\n----\n' + text,
+        },
+      ],
+    });
+    totals.inputTokens += response.usage.input_tokens;
+    totals.outputTokens += response.usage.output_tokens;
+    const block = response.content.find((b) => b.type === 'tool_use');
+    if (!block || block.type !== 'tool_use') return [];
+    const raw = (block.input as { appointments?: unknown }).appointments;
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .map((r): Appointment => {
+        const o = (r ?? {}) as Record<string, unknown>;
+        return {
+          title: typeof o.title === 'string' ? o.title.trim() : '',
+          address: typeof o.address === 'string' ? o.address.trim() : '',
+          date: typeof o.date === 'string' ? o.date.trim() : '',
+          time: typeof o.time === 'string' ? o.time.trim() : '',
+          durationMin: typeof o.durationMin === 'number' && o.durationMin > 0 ? Math.round(o.durationMin) : 0,
+        };
+      })
+      .filter((a) => a.address.length > 0);
   } catch (err) {
     throw toLlmError(err);
   }
