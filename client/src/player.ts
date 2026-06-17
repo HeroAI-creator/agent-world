@@ -151,6 +151,17 @@ export class Player {
     this.moveToCell({ x: Math.floor(worldX / this.cellPx), y: Math.floor(worldY / this.cellPx) });
   }
 
+  /** Snap instantly to a cell (no walk) — used when (re)entering a world. */
+  teleportToCell(cell: Cell): void {
+    this.scene.tweens.killTweensOf(this.container);
+    this.px = cell.x * this.cellPx + this.cellPx / 2;
+    this.py = cell.y * this.cellPx + this.cellPx / 2;
+    this.container.setPosition(this.px, this.py - SHADOW_Y);
+    this.container.setDepth(100 + Math.round(this.py));
+    this.sprite.anims.stop();
+    this.sprite.setTexture(frameKey(this.lastDir, 0));
+  }
+
   moveToCell(target: Cell): void {
     const goal = this.nearestWalkable(target);
     const path = aStar(this.walk, this.cols, this.rows, this.cell, goal);

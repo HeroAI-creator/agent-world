@@ -51,18 +51,56 @@
           transform: rotate(360deg);
         }
       }
+      #marsh-banner {
+        position: absolute;
+        top: 56px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 60;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 8px 14px;
+        background: rgba(12, 28, 34, 0.82);
+        border: 1px solid rgba(111, 211, 194, 0.5);
+        border-radius: 999px;
+        color: #d9f4ee;
+        font-family: Consolas, monospace;
+        font-size: 13px;
+        letter-spacing: 0.5px;
+        box-shadow: 0 6px 22px rgba(0, 0, 0, 0.4);
+      }
+      #marsh-banner[hidden] {
+        display: none;
+      }
+      #marsh-banner button {
+        background: rgba(111, 211, 194, 0.16);
+        border: 1px solid rgba(111, 211, 194, 0.6);
+        color: #eafff9;
+        border-radius: 999px;
+        padding: 4px 10px;
+        font: inherit;
+        cursor: pointer;
+      }
+      #marsh-banner button:hover {
+        background: rgba(111, 211, 194, 0.3);
+      }
     </style>
   </head>
   <body>
     <div id="app">
       <div id="loading-screen">
         <div class="loading-inner">
-          <div class="loading-title">🏘 Agent World</div>
+          <div class="loading-title" id="loading-title">🏘 Agent World</div>
           <div class="loading-spinner"></div>
-          <div class="loading-sub">entering the village…</div>
+          <div class="loading-sub" id="loading-sub">entering the village…</div>
         </div>
       </div>
       <div id="world-panel">
+        <div id="marsh-banner" hidden>
+          <span>🌿 Marsh Outpost</span>
+          <button id="marsh-back" type="button">↩ Back to Village</button>
+        </div>
         <div id="topbar">
           <span id="title">🏘 Agent World</span>
           <span id="clock"><span id="tod">🌅</span> <span id="clock-label">Day 1 · 06:00</span></span>

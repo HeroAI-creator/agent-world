@@ -7,6 +7,8 @@ import * as dash from './dash';
 import * as log from './log';
 import { connect } from './net';
 import { WorldScene } from './scenes/WorldScene';
+import { MarshScene } from './scenes/MarshScene';
+import type { MarshAgentDef } from './marshConfig';
 
 const pauseBtn = document.getElementById('pause-btn') as HTMLButtonElement;
 const speedSel = document.getElementById('speed-select') as HTMLSelectElement;
@@ -30,6 +32,11 @@ const jarvisUpload = document.getElementById('jarvis-upload') as HTMLButtonEleme
 const jarvisFileInput = document.getElementById('jarvis-file-input') as HTMLInputElement;
 const jarvisInput = document.getElementById('jarvis-input') as HTMLInputElement;
 const jarvisSend = document.getElementById('jarvis-send') as HTMLButtonElement;
+const titleEl = document.getElementById('title') as HTMLSpanElement;
+const loadingTitle = document.getElementById('loading-title') as HTMLDivElement;
+const loadingSub = document.getElementById('loading-sub') as HTMLDivElement;
+const marshBanner = document.getElementById('marsh-banner') as HTMLDivElement;
+const marshBack = document.getElementById('marsh-back') as HTMLButtonElement;
 
 const TOD_EMOJI: Record<string, string> = { morning: '🌅', midday: '☀️', evening: '🌆', night: '🌙' };
 
@@ -40,10 +47,76 @@ function setClock(day: number, clock: string, timeOfDay: string): void {
 
 let game: Phaser.Game | null = null;
 let scene: WorldScene | null = null;
+let marshScene: MarshScene | null = null;
+let inMarsh = false;
+let marshStarted = false;
 let tickMs = 3000;
 let speed = 1;
 
 const moveMs = () => (tickMs / speed) * 0.82;
+
+// ---- world switching (village <-> marsh) ----
+
+function showLoading(title: string, sub: string): void {
+  loadingTitle.textContent = title;
+  loadingSub.textContent = sub;
+  loadingScreen.classList.remove('hidden');
+}
+function hideLoading(): void {
+  loadingScreen.classList.add('hidden');
+}
+
+function setMarshMode(on: boolean): void {
+  marshBanner.hidden = !on;
+  titleEl.textContent = on ? '🌿 Marsh Outpost' : '🏘 Agent World';
+  if (on) {
+    jarvisPanel.hidden = true;
+    locationPopover.hidden = true;
+  }
+}
+
+/** Step through the village portal → the Marsh Outpost. */
+function enterMarsh(): void {
+  if (inMarsh || !game) return;
+  inMarsh = true;
+  showLoading('🌿 Marsh Outpost', 'crossing through the portal…');
+  setMarshMode(true);
+  // let the overlay fade in before the heavy world swap (marsh bg is ~4.7MB)
+  window.setTimeout(() => {
+    if (!game) return;
+    game.scene.sleep('world');
+    if (!marshStarted) {
+      marshStarted = true;
+      game.scene.start('marsh'); // preload + create; MarshScene.onReady hides the loader
+    } else {
+      marshScene?.resetPlayerToSpawn();
+      game.scene.wake('marsh');
+      window.setTimeout(hideLoading, 350);
+    }
+  }, 480);
+}
+
+/** Step through the marsh portal → back to the village. */
+function exitToVillage(): void {
+  if (!inMarsh || !game) return;
+  inMarsh = false;
+  showLoading('🏘 Agent World', 'back to the village…');
+  window.setTimeout(() => {
+    if (!game) return;
+    game.scene.sleep('marsh');
+    scene?.reenterFromPortal();
+    game.scene.wake('world');
+    setMarshMode(false);
+    window.setTimeout(hideLoading, 350);
+  }, 480);
+}
+
+function showMarshAgent(def: MarshAgentDef): void {
+  locationKicker.textContent = 'MARSH OUTPOST';
+  locationTitle.textContent = def.name;
+  locationDesc.textContent = def.role;
+  locationPopover.hidden = false;
+}
 
 function setPausedUi(paused: boolean): void {
   pauseBtn.textContent = paused ? '▶ Play' : '⏸ Pause';
@@ -229,6 +302,7 @@ const net = connect({
       showLocation,
       openJarvisPanel,
       () => loadingScreen.classList.add('hidden'),
+      enterMarsh,
     );
     game = new Phaser.Game({
       type: Phaser.AUTO,
@@ -239,6 +313,14 @@ const net = connect({
       scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
       scene,
     });
+
+    // World 2 — the Marsh Outpost. Registered now, started on first portal use.
+    marshScene = new MarshScene({
+      onReturn: exitToVillage,
+      onReady: hideLoading,
+      onAgentClick: showMarshAgent,
+    });
+    game.scene.add('marsh', marshScene, false);
     log.appendSystem('Press G over the world to toggle the walkability debug overlay.');
     // debug handle (handy in the browser console)
     (window as unknown as Record<string, unknown>).__game = game;
@@ -290,6 +372,7 @@ const net = connect({
 pauseBtn.addEventListener('click', () => net.sendControl('toggle_pause'));
 speedSel.addEventListener('change', () => net.sendControl('set_speed', parseFloat(speedSel.value)));
 filterSel.addEventListener('change', () => log.setFilter(filterSel.value));
+marshBack.addEventListener('click', exitToVillage);
 
 // Vite HMR: a stale Phaser.Game can't survive module replacement — just reload.
 if (import.meta.hot) {

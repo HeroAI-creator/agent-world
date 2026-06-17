@@ -14,6 +14,8 @@ import { DebugGrid } from '../debugGrid';
 import type { AgentInfo, AgentSnapshot, BubbleMsg, Dir, InitData, TickMsg } from '../types';
 import { ensureCharTexture } from '../textures';
 import { Player } from '../player';
+import { Portal } from '../portal';
+import { VILLAGE_PORTAL_CELL } from '../marshConfig';
 
 const DIRS: Dir[] = ['down', 'left', 'right', 'up'];
 
@@ -54,6 +56,8 @@ export class WorldScene extends Phaser.Scene {
   private jarvisGlow: Phaser.GameObjects.Arc | null = null;
   private jarvisBaseY = 0;
   private player: Player | null = null;
+  private portal: Portal | null = null;
+  private portalArmed = false;
   private ready = false;
 
   constructor(
@@ -63,6 +67,7 @@ export class WorldScene extends Phaser.Scene {
     private readonly onLocationClick: (locationName: string) => void,
     private readonly onJarvisOpen: () => void,
     private readonly onReady?: () => void,
+    private readonly onPortal?: () => void,
   ) {
     super({ key: 'world' });
     this.cell = initData.grid.cellPx;
@@ -156,6 +161,10 @@ export class WorldScene extends Phaser.Scene {
     // The player avatar — click-to-move. Starts on the open plaza near the fire.
     this.player = new Player(this, this.initData.grid, this.playerSpawnCell());
 
+    // The portal to World 2 (the Marsh Outpost), at the upper-right forest edge.
+    this.portal = new Portal(this, VILLAGE_PORTAL_CELL, this.cell, '✦ Marsh Outpost ✦');
+    this.portalArmed = true;
+
     // Click on empty ground: clear the log filter AND walk the player there.
     this.input.on(
       'pointerdown',
@@ -169,6 +178,25 @@ export class WorldScene extends Phaser.Scene {
 
     this.ready = true;
     this.onReady?.();
+  }
+
+  /** Per-frame: fire the portal when the player walks onto it (re-arms off it). */
+  update(): void {
+    if (!this.ready || !this.player || !this.portal) return;
+    const feet = this.player.position;
+    const on = this.portal.contains(feet.x, feet.y);
+    if (on && this.portalArmed) {
+      this.portalArmed = false;
+      this.onPortal?.();
+    } else if (!on && !this.portalArmed) {
+      this.portalArmed = true;
+    }
+  }
+
+  /** Returning from the marsh: drop the player back on the plaza, not on the portal. */
+  reenterFromPortal(): void {
+    this.player?.teleportToCell(this.playerSpawnCell());
+    this.portalArmed = false;
   }
 
   /** A walkable cell near the village centre for the player to start on. */
