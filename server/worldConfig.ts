@@ -58,41 +58,43 @@ export const WORLD_CONFIG: WorldConfig = {
   rows: 34,
   cellPx: 32,
   blocked: [
-    // --- forest border ---
+    // --- forest border (the painted tree frame) ---
     { x: 0, y: 0, w: 60, h: 4, label: 'forest north' },
-    { x: 0, y: 0, w: 2, h: 34, label: 'forest west' },
-    { x: 55, y: 0, w: 5, h: 34, label: 'forest east' },
+    { x: 0, y: 0, w: 3, h: 34, label: 'forest west' },
+    { x: 54, y: 0, w: 6, h: 34, label: 'forest east' },
     { x: 0, y: 31, w: 60, h: 3, label: 'forest south' },
-    { x: 16, y: 4, w: 11, h: 3, label: 'trees north-mid' },
+    // --- inner tree clusters kept off the walkable paths ---
+    { x: 17, y: 4, w: 6, h: 3, label: 'trees north-mid' },
     { x: 32, y: 4, w: 6, h: 3, label: 'trees north-mid 2' },
-    // --- buildings & furniture ---
-    { x: 7, y: 3, w: 8, h: 7, label: 'cottage (Mira)' },
-    { x: 38, y: 4, w: 9, h: 6, label: 'cabin north-east' },
-    { x: 23, y: 7, w: 4, h: 4, label: 'well' },
-    { x: 29, y: 15, w: 3, h: 3, label: 'campfire pit' },
-    { x: 45, y: 11, w: 8, h: 8, label: 'market stall' },
-    { x: 34, y: 17, w: 10, h: 5, label: 'garden fence' },
-    { x: 34, y: 23, w: 10, h: 9, label: 'cottage south' },
+    { x: 3, y: 4, w: 5, h: 9, label: 'trees west-upper' },
+    { x: 46, y: 4, w: 8, h: 10, label: 'trees east-upper' },
+    // --- buildings & furniture (fit to the painting via the grid overlay) ---
+    { x: 8, y: 3, w: 9, h: 8, label: 'cottage (Mira)' },
+    { x: 37, y: 4, w: 8, h: 7, label: 'cabin north-east' },
+    { x: 22, y: 6, w: 5, h: 5, label: 'well' },
+    { x: 29, y: 15, w: 4, h: 3, label: 'campfire pit' },
+    { x: 45, y: 13, w: 7, h: 6, label: 'market stall' },
+    { x: 44, y: 19, w: 8, h: 5, label: 'garden fence' },
+    { x: 34, y: 22, w: 10, h: 8, label: 'cottage south' },
     // --- the stream (blocks water-walking). The bridge crossing is scripted
     //     in pixels above this; the deck row is blocked between the two mouths
     //     so A* can't sneak across on the grid — only the scripted path can. ---
-    { x: 5, y: 13, w: 6, h: 7, label: 'waterfall pool' },
-    { x: 8, y: 18, w: 5, h: 6, label: 'upper stream' },
-    { x: 13, y: 23, w: 12, h: 3, label: 'bridge deck + water (impassable on grid)' },
-    { x: 15, y: 26, w: 9, h: 4, label: 'lower stream' },
-    { x: 19, y: 29, w: 9, h: 3, label: 'lower stream exit' },
-    // --- decoration clusters agents shouldn't clip through ---
+    { x: 4, y: 13, w: 7, h: 7, label: 'waterfall pool' },
+    { x: 9, y: 19, w: 6, h: 5, label: 'upper stream' },
+    { x: 13, y: 23, w: 11, h: 3, label: 'bridge deck + water (impassable on grid)' },
+    { x: 18, y: 26, w: 8, h: 4, label: 'lower stream' },
+    { x: 22, y: 29, w: 8, h: 3, label: 'lower stream exit' },
+    // --- decoration cluster agents shouldn't clip through ---
     { x: 4, y: 11, w: 3, h: 2, label: 'crystals west' },
-    { x: 44, y: 18, w: 2, h: 3, label: 'crystal east' },
   ],
   locations: [
-    { name: 'Cottage', x: 16, y: 9, radius: 3 },
-    { name: 'Well', x: 25, y: 9, radius: 3 },
-    { name: 'Campfire', x: 30, y: 16, radius: 4 },
-    { name: 'Market Stall', x: 44, y: 15, radius: 3 },
-    { name: 'Garden', x: 33, y: 19, radius: 3 },
+    { name: 'Cottage', x: 18, y: 11, radius: 3 },
+    { name: 'Well', x: 25, y: 12, radius: 3 },
+    { name: 'Campfire', x: 31, y: 16, radius: 4 },
+    { name: 'Market Stall', x: 44, y: 16, radius: 3 },
+    { name: 'Garden', x: 43, y: 21, radius: 3 },
     { name: 'Bridge', x: 25, y: 24, radius: 2 },
-    { name: 'Forest Clearing', x: 7, y: 26, radius: 4 },
+    { name: 'Forest Clearing', x: 7, y: 27, radius: 4 },
   ],
   bridge: {
     // feet centerline along the planks, clearing-side (SW) → village-side (SE)
