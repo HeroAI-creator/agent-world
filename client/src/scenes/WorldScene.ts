@@ -258,7 +258,7 @@ export class WorldScene extends Phaser.Scene {
     if (!this.textures.exists('jarvis-fireball')) return;
 
     const campfire = this.initData.locations.find((l) => l.name === 'Campfire');
-    const x = campfire ? campfire.x * this.cell + this.cell * 2.35 : this.worldW / 2;
+    const x = campfire ? campfire.x * this.cell + this.cell * 0.85 : this.worldW / 2;
     const y = campfire ? campfire.y * this.cell - this.cell * 2.25 : this.worldH * 0.2;
     this.jarvisBaseY = y;
     this.jarvisGlow = this.add.circle(0, 40, 104, 0xff9d22, 0.22);
