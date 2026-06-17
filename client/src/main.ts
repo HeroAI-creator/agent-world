@@ -20,6 +20,7 @@ const sideReopenBtn = document.getElementById('side-reopen-btn') as HTMLButtonEl
 const locationPopover = document.getElementById('location-popover') as HTMLElement;
 const locationTitle = document.getElementById('location-title') as HTMLHeadingElement;
 const locationDesc = document.getElementById('location-desc') as HTMLParagraphElement;
+const locationKicker = document.getElementById('location-kicker') as HTMLDivElement;
 const locationClose = document.getElementById('location-close') as HTMLButtonElement;
 const jarvisPanel = document.getElementById('jarvis-panel') as HTMLElement;
 const jarvisClose = document.getElementById('jarvis-close') as HTMLButtonElement;
@@ -54,28 +55,28 @@ const isJarvisWakePhrase = (text: string) => /\bhey[\s,]+jarvis\b/i.test(text) |
 
 const LOCATION_COPY: Record<string, { title: string; desc: string }> = {
   Cottage: {
-    title: 'Cottage',
-    desc: 'A warm timber home tucked into the trees. Villagers return here to rest, recover energy, and plan the next stretch of the day.',
+    title: "Cottage · Mira's Workspace",
+    desc: "Mira the herbalist's home, and her workspace (green). A curious, slightly nosy plant-cataloguer — give Mira a task and she comes here to work, sorting and recording every plant she's gathered around the village.",
   },
   Well: {
-    title: 'Old Well',
-    desc: 'The stone well anchors the north path. It is a quiet meeting point and a good place for villagers to notice who is nearby.',
+    title: "Old Well · Oren's Workspace",
+    desc: "Oren the carpenter's workspace (yellow). A gruff builder who hates gossip and loves quiet — assign Oren a task and he heads here to work on the new roof over the well.",
   },
   Campfire: {
     title: 'Campfire',
     desc: 'The bright center of the village. Work pauses here, stories collect here, and Jarvis burns above the flames as the local assistant spirit.',
   },
   'Market Stall': {
-    title: 'Market Stall',
-    desc: 'A lantern-lit stall stacked with goods from the forest path. It is the trading point for tools, food, and odd discoveries.',
+    title: "Market Stall · Tessa's Workspace",
+    desc: "Tessa the vendor's lantern-lit stall, and her workspace (blue). An ambitious schemer — give Tessa a task and she works here, building the stall toward a proper shop before the autumn fair. (Also where she processes Armada intakes.)",
   },
   Garden: {
     title: 'Garden',
     desc: 'A fenced patch of herbs and vegetables, kept close to the firelight. It gives the village its daily rhythm of small work.',
   },
   Bridge: {
-    title: 'Bridge',
-    desc: 'The wooden bridge crosses the stream between village and clearing. Agents use it as the safe route over the water.',
+    title: "Bridge · Bram's Workspace",
+    desc: "Bram the fisherman's workspace (red), out over the stream. A superstitious sort — tasked, Bram works here watching the water and gathering evidence of whatever he swears lives under the bridge. It's also the only safe crossing between village and clearing.",
   },
   'Forest Clearing': {
     title: 'Forest Clearing',
@@ -93,11 +94,21 @@ function setSidebarCollapsed(collapsed: boolean): void {
   setTimeout(refreshLayout, 260);
 }
 
+// Which agent each workspace belongs to (workspaces = the agents' spawn points).
+const WORKSPACE_OF: Record<string, string> = {
+  'Market Stall': 'Tessa',
+  Well: 'Oren',
+  Bridge: 'Bram',
+  Cottage: 'Mira',
+};
+
 function showLocation(locationName: string): void {
   const copy = LOCATION_COPY[locationName] ?? {
     title: locationName,
     desc: 'A marked village station. Agents can travel here, idle nearby, and use it as part of their daily route.',
   };
+  const owner = WORKSPACE_OF[locationName];
+  locationKicker.textContent = owner ? `${owner.toUpperCase()}'S WORKSPACE` : 'MAP STATION';
   locationTitle.textContent = copy.title;
   locationDesc.textContent = copy.desc;
   locationPopover.hidden = false;
