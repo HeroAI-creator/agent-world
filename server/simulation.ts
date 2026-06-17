@@ -34,6 +34,12 @@ const PURSUIT_LIMIT = 40; // ticks chasing a talk_to target before giving up
 const PAIR_COOLDOWN_TICKS = 80; // same pair can't restart a chat for this long
 const CONVO_LINE_EVERY = 2; // ticks between spoken lines
 
+// When false (default), villagers DON'T spend API tokens on their own — they
+// roam via the no-LLM fallback and only call Claude when "called": you chat to
+// them, or you send Tessa an intake. Set AUTO_THINK=true for the fully
+// autonomous show (agents think + strike up conversations on their own).
+const AUTO_THINK = /^(1|true|yes|on)$/i.test((process.env.AUTO_THINK ?? '').trim());
+
 interface ActiveConversation {
   aId: string;
   bId: string;
@@ -76,6 +82,13 @@ export class Simulation {
       a.decideAtTick = 2 + i * 3; // stagger first decisions so we don't burst API calls
     });
     this.log({ icon: '⭐', kind: 'system', text: 'Simulation started. Villagers are waking up…' });
+    if (!AUTO_THINK) {
+      this.log({
+        icon: '💤',
+        kind: 'system',
+        text: 'Idle thinking OFF — villagers roam for free and only use the API when you chat to them or send Tessa an intake. (Set AUTO_THINK=true for autonomous thinking + conversations.)',
+      });
+    }
     this.scheduleNext();
   }
 
@@ -122,7 +135,8 @@ export class Simulation {
     for (const agent of this.agents) this.stepAgent(agent);
     for (const agent of this.agents) {
       if (agent.needsDecision && !agent.pendingDecision && agent.state !== 'talking' && this.tick >= agent.decideAtTick) {
-        void this.decide(agent);
+        if (AUTO_THINK) void this.decide(agent);
+        else this.idleRoam(agent); // no-LLM: roam for free until the user calls on them
       }
     }
     const c = this.clockInfo();
@@ -468,6 +482,25 @@ export class Simulation {
     } else {
       this.applyWander(a, 8 + Math.floor(Math.random() * 5));
     }
+  }
+
+  /** AUTO_THINK off: pick the agent's next action with no API call. Agents keep
+   *  ambling around the map (so the village still feels alive) but the decision
+   *  and conversation LLM calls never fire — zero idle token spend. */
+  private idleRoam(a: Agent): void {
+    a.needsDecision = false;
+    // ~40% stroll to a DIFFERENT named place (a real walk, never a 0-step loop);
+    // otherwise wander in place for a while. Both are multi-tick, so no log spam.
+    if (Math.random() < 0.4) {
+      const here = this.world.locationNameAt(a.cell);
+      const choices = this.world.locations.filter((l) => l.name !== here);
+      const loc = choices[Math.floor(Math.random() * choices.length)];
+      if (loc) {
+        this.startTravel(a, 'move_to', loc, 0);
+        return;
+      }
+    }
+    this.applyWander(a, 8 + Math.floor(Math.random() * 6), true);
   }
 
   private warnLlmFailure(err: llm.LlmUnavailableError): void {
