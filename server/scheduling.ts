@@ -106,12 +106,14 @@ export async function scheduleAppointments(appts: Appointment[]): Promise<Schedu
     const ordered = order.map((i) => group[i]);
     const isIso = ISO.test(date);
 
-    // assign clock times in visit order
+    // assign clock times in visit order. The day starts at 09:00 by default;
+    // an earlier fixed appointment pulls the start earlier, but a later one
+    // (e.g. a 2pm) does NOT push the whole morning back — it's honored per-stop.
     const earliestFixed = group
       .map((a) => parseHHMM(a.time))
       .filter((n): n is number => n !== null)
       .sort((a, b) => a - b)[0];
-    let cursor = earliestFixed ?? DAY_START_MIN;
+    let cursor = earliestFixed != null ? Math.min(DAY_START_MIN, earliestFixed) : DAY_START_MIN;
     let totalDriveMin = 0;
 
     const stops: ScheduledStop[] = [];
