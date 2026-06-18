@@ -143,7 +143,13 @@ export interface ControlMsg {
   speed: number;
 }
 
-export type ServerMsg = InitMsg | TickMsg | LogMsg | BubbleMsg | StatsBroadcast | ControlMsg;
+/** JARVIS's spoken reply, shown in the campfire panel chat. */
+export interface JarvisReplyMsg {
+  type: 'jarvis';
+  text: string;
+}
+
+export type ServerMsg = InitMsg | TickMsg | LogMsg | BubbleMsg | StatsBroadcast | ControlMsg | JarvisReplyMsg;
 
 // ---- WebSocket messages (client -> server) ----
 
@@ -175,7 +181,13 @@ export interface ClientIntakeMsg {
   filename: string;
 }
 
-export type ClientMsg = ClientControlMsg | ClientTaskMsg | ClientChatMsg | ClientIntakeMsg;
+/** A message typed into the campfire JARVIS panel. */
+export interface ClientJarvisMsg {
+  type: 'jarvis';
+  text: string;
+}
+
+export type ClientMsg = ClientControlMsg | ClientTaskMsg | ClientChatMsg | ClientIntakeMsg | ClientJarvisMsg;
 
 // ---- Armada intake extraction ----
 

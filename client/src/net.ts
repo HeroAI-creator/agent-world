@@ -15,6 +15,8 @@ export interface Net {
   sendChat(target: string, text: string): void;
   /** Hand an intake photo to Tessa: base64 (no data: prefix) + its mime type. */
   sendIntake(dataB64: string, mediaType: string, filename: string): void;
+  /** A message typed into the campfire JARVIS panel (JARVIS dispatches it). */
+  sendJarvis(text: string): void;
 }
 
 // Where the simulation server lives. In dev and single-host prod it's the same
@@ -87,6 +89,9 @@ export function connect(handlers: NetHandlers): Net {
     },
     sendIntake(dataB64, mediaType, filename) {
       send({ type: 'intake', dataB64, mediaType, filename });
+    },
+    sendJarvis(text) {
+      send({ type: 'jarvis', text });
     },
   };
 }

@@ -102,6 +102,8 @@ wss.on('connection', (ws) => {
         if (typeof msg.dataB64 === 'string' && msg.dataB64.length > 0) {
           void sim.handleIntake(msg.dataB64, msg.mediaType || 'image/jpeg', msg.filename || 'intake.jpg');
         }
+      } else if (msg.type === 'jarvis') {
+        if (typeof msg.text === 'string' && msg.text.trim()) void sim.handleJarvis(msg.text);
       }
     } catch {
       // ignore malformed client messages

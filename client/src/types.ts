@@ -110,4 +110,5 @@ export type ServerMsg =
   | { type: 'log'; event: LogEvent }
   | BubbleMsg
   | { type: 'stats'; stats: LlmStats }
-  | { type: 'control'; paused: boolean; speed: number };
+  | { type: 'control'; paused: boolean; speed: number }
+  | { type: 'jarvis'; text: string };

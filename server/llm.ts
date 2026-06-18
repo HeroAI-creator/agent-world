@@ -266,6 +266,73 @@ export async function extractAppointments(text: string, today: string): Promise<
   }
 }
 
+// ---- JARVIS: the campfire dispatcher agent ----
+//
+// JARVIS is the brain the user talks to. It reads the message, decides which
+// specialist should handle it (Mira = routing/scheduling, Tessa = intake photos)
+// or whether to just answer, and speaks back in its own voice. Uses Sonnet by
+// default for sharper routing/judgment; the workers stay on Haiku.
+
+export const JARVIS_MODEL = process.env.JARVIS_MODEL?.trim() || 'claude-sonnet-4-6';
+
+export type JarvisRoute = 'schedule' | 'intake' | 'chat';
+export interface JarvisDecision {
+  route: JarvisRoute;
+  reply: string;
+}
+
+const JARVIS_SYSTEM =
+  'You are JARVIS, the calm, capable AI that floats above the campfire in Agent World — the control desk for Armada Public Adjusting. ' +
+  'You coordinate two specialist villagers and answer directly when neither is needed. Decide by what the user wants DONE, not by individual words:\n' +
+  '- Mira (route="schedule"): she takes property visits/appointments (addresses, optional dates/times), optimizes the driving route, books them on Outlook in order, and emails the route. Choose this whenever the user wants stops/visits/appointments ROUTED, SCHEDULED, planned, ordered, or put on the calendar.\n' +
+  '- Tessa (route="intake"): she reads a claim-intake FORM PHOTO and drafts the Welcome Letter + carrier Notice. Choose this ONLY when the user wants a claim intake form/photo turned into those documents (it needs an attached image).\n' +
+  'CRITICAL: the word "claim" does NOT by itself mean intake — public adjusters drive to claim sites, so "route/schedule these claims" or visits-with-addresses-to-schedule is ALWAYS Mira (route="schedule"). Intake is specifically about processing a claim FORM into documents. ' +
+  'If a message mentions a claim but asks to route/schedule/plan visits, choose route="schedule". Use route="chat" only when neither applies. ' +
+  'Always set reply to a short (1-3 sentence) message in your composed JARVIS voice telling the user what you are doing. When handing to Mira, do not restate the stops — just say you are handing it to her.';
+
+const JARVIS_TOOL: Anthropic.Tool = {
+  name: 'dispatch',
+  description: 'Decide how to handle the user message and what JARVIS says back.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      route: { type: 'string', enum: ['schedule', 'intake', 'chat'], description: 'Which path handles this message.' },
+      reply: { type: 'string', description: "JARVIS's spoken reply to the user (1-3 sentences, in character)." },
+    },
+    required: ['route', 'reply'],
+  },
+};
+
+export async function jarvisDispatch(text: string): Promise<JarvisDecision> {
+  pruneWindow();
+  if (callTimes.length >= maxCallsPerMin()) {
+    throw new LlmUnavailableError(`local rate cap reached (${maxCallsPerMin()} calls/min)`, 'rate_limit_local');
+  }
+  const anthropic = getClient();
+  callTimes.push(Date.now());
+  totals.calls += 1;
+  try {
+    const response = await anthropic.messages.create({
+      model: JARVIS_MODEL,
+      max_tokens: 400,
+      tools: [JARVIS_TOOL],
+      tool_choice: { type: 'tool', name: 'dispatch' },
+      system: JARVIS_SYSTEM,
+      messages: [{ role: 'user', content: text }],
+    });
+    totals.inputTokens += response.usage.input_tokens;
+    totals.outputTokens += response.usage.output_tokens;
+    const block = response.content.find((b) => b.type === 'tool_use');
+    if (!block || block.type !== 'tool_use') throw new LlmUnavailableError('JARVIS did not return a decision', 'api_error');
+    const input = block.input as { route?: unknown; reply?: unknown };
+    const route: JarvisRoute = input.route === 'schedule' || input.route === 'intake' ? input.route : 'chat';
+    const reply = typeof input.reply === 'string' && input.reply.trim() ? input.reply.trim() : 'On it.';
+    return { route, reply };
+  } catch (err) {
+    throw toLlmError(err);
+  }
+}
+
 export function getStats(): LlmStats {
   return {
     calls: totals.calls,

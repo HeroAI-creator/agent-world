@@ -223,7 +223,7 @@ async function fileToDownscaledJpegB64(file: File, maxEdge = 2000): Promise<stri
 function openJarvisPanel(): void {
   jarvisPanel.hidden = false;
   if (jarvisChatLog.childElementCount === 0) {
-    appendJarvisMessage('jarvis', 'I am awake above the fire. Send a message or attach files for this village session.');
+    appendJarvisMessage('jarvis', 'I am awake above the fire. Attach a claim photo and Tessa drafts the intake; paste a list of stops and ask me to route + schedule them and Mira handles the routing, Outlook, and email.');
   }
   jarvisInput.focus();
 }
@@ -233,10 +233,11 @@ function sendJarvisMessage(): void {
   if (!text) return;
   appendJarvisMessage('you', text);
   jarvisInput.value = '';
-  // Route to Tessa, the village's intake assistant. Her reply appears as a
-  // speech bubble over the fire and in the agent log.
-  net.sendChat('tessa', text);
-  appendJarvisMessage('jarvis', 'Passed to Tessa — watch her reply over the campfire and in the log.');
+  // JARVIS (server-side, Sonnet) reads it, decides who handles it (Mira for
+  // routing/scheduling, Tessa for intake) or answers, and replies via a
+  // 'jarvis' message that lands in this panel.
+  net.sendJarvis(text);
+  scene?.wakeJarvis();
 }
 
 sideCollapseBtn.addEventListener('click', () => setSidebarCollapsed(true));
@@ -351,6 +352,11 @@ const net = connect({
         break;
       case 'bubble':
         scene?.showBubble(msg);
+        break;
+      case 'jarvis':
+        appendJarvisMessage('jarvis', msg.text);
+        openJarvisPanel();
+        scene?.wakeJarvis();
         break;
       case 'stats':
         log.updateStats(msg.stats);

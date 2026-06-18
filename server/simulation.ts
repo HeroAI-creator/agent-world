@@ -793,6 +793,33 @@ export class Simulation {
     }
   }
 
+  // ---- JARVIS: the campfire dispatcher ----
+
+  /** JARVIS reads a campfire message, decides who should handle it (Mira for
+   *  routing/scheduling, Tessa for intake photos) or answers directly, and speaks
+   *  back into the panel. Falls back to keyword routing when the LLM is offline. */
+  async handleJarvis(text: string): Promise<void> {
+    const mira = this.agentById('mira');
+    try {
+      const decision = await llm.jarvisDispatch(text);
+      this.send({ type: 'jarvis', text: decision.reply });
+      this.log({ icon: '✨', kind: 'system', text: `JARVIS routes "${text.slice(0, 50)}" → ${decision.route}` });
+      if (decision.route === 'schedule' && mira) void this.handleMiraSchedule(mira, text);
+      // 'intake' and 'chat' are fully covered by the spoken reply (intake still
+      // needs a photo upload, which JARVIS asks for in its reply).
+    } catch (err) {
+      this.warnLlmFailure(err as llm.LlmUnavailableError);
+      // No LLM (no key / out of credits): keyword-route so JARVIS still works.
+      const wantsSchedule = /\b(route|routing|schedule|scheduling|appointments?|stops?|itiner\w*|calendar|optimi[sz]e|visits?|drive)\b/i.test(text);
+      if (wantsSchedule && mira) {
+        this.send({ type: 'jarvis', text: "I can't reach my full reasoning right now, but this looks like scheduling — handing it to Mira." });
+        void this.handleMiraSchedule(mira, text);
+      } else {
+        this.send({ type: 'jarvis', text: "I can't reach the network right now. For a route, paste a list of stops and ask me to schedule them; for an intake, attach a claim photo." });
+      }
+    }
+  }
+
   // ---- conversations ----
 
   private pairKey(idA: string, idB: string): string {
