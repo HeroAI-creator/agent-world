@@ -136,3 +136,60 @@ export async function emailIntake(f: IntakeFields, docs: FilledDoc[]): Promise<E
     return { sent: false, to, toShort, reason: (err as Error).message };
   }
 }
+
+const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+export interface CrmFileResult {
+  ok: boolean;
+  claimId?: string;
+  created?: boolean;
+  reason?: string;
+}
+
+/** File the intake into the Atlas PA CRM: find-or-create the claim (by claim# then
+ *  insured name + loss address) and attach the Welcome Letter, carrier Notice, and
+ *  the original intake photo. No-ops gracefully when CRM_BASE_URL / CRM_API_KEY are
+ *  unset, so the intake still drafts + emails without a CRM configured. */
+export async function fileIntakeToCrm(
+  f: IntakeFields,
+  docs: FilledDoc[],
+  photo?: { base64: string; mediaType: string; filename: string },
+): Promise<CrmFileResult> {
+  const base = process.env.CRM_BASE_URL?.trim();
+  const key = process.env.CRM_API_KEY?.trim();
+  if (!base || !key) return { ok: false, reason: 'CRM not configured (CRM_BASE_URL / CRM_API_KEY unset).' };
+
+  const documents: Array<{ filename: string; contentBase64: string; contentType: string; category: string }> = docs.map((d) => ({
+    filename: d.filename,
+    contentBase64: d.content.toString('base64'),
+    contentType: DOCX_MIME,
+    category: 'intake',
+  }));
+  if (photo?.base64) {
+    documents.push({ filename: photo.filename || 'intake-photo.jpg', contentBase64: photo.base64, contentType: photo.mediaType || 'image/jpeg', category: 'intake' });
+  }
+
+  try {
+    const resp = await fetch(`${base.replace(/\/$/, '')}/api/agent/intake`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-agent-key': key },
+      body: JSON.stringify({
+        insured_name: f.insured_name,
+        loss_address: f.loss_address,
+        carrier: f.carrier,
+        policy_number: f.policy_number,
+        claim_number: f.claim_number,
+        date_of_loss: f.date_of_loss,
+        cause_of_loss: f.cause_of_loss,
+        phone: f.phone,
+        email: f.email,
+        documents,
+      }),
+    });
+    const data = (await resp.json()) as { claimId?: string; created?: boolean; error?: string };
+    if (!resp.ok || data.error) return { ok: false, reason: data.error || `CRM HTTP ${resp.status}` };
+    return { ok: true, claimId: data.claimId, created: data.created };
+  } catch (err) {
+    return { ok: false, reason: (err as Error).message };
+  }
+}

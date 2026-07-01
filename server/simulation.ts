@@ -8,7 +8,7 @@
 // agent crosses cleanly on the planks instead of wandering onto the water.
 
 import { Agent, type CurrentAction } from './agent.js';
-import { emailIntake, fillTemplates } from './intake.js';
+import { emailIntake, fillTemplates, fileIntakeToCrm } from './intake.js';
 import * as llm from './llm.js';
 import { scheduleAppointments } from './scheduling.js';
 import { cellsToPixels, followPath, getDirectionFromDelta } from './movement.js';
@@ -705,6 +705,22 @@ export class Simulation {
           tessa.task.status = 'done';
           tessa.task.note = 'Drafted (email not configured)';
         }
+      }
+
+      // ── Bram files the intake into Atlas PA: find-or-create the claim, then attach
+      //    the Welcome Letter, carrier Notice, and the original intake photo. ──
+      const bram = this.agentById('bram');
+      const filer = bram || tessa;
+      const crm = await fileIntakeToCrm(fields, docs, { base64: imageB64, mediaType, filename });
+      if (crm.ok) {
+        const verb = crm.created ? 'created new claim' : 'filed into existing claim';
+        this.log({ agent: filer, icon: '📁', kind: 'system', text: `filed the intake into Atlas PA — ${verb} ${crm.claimId}` });
+        if (bram) {
+          this.bubble(bram, `📁 Filed into Atlas PA — ${crm.created ? 'new claim' : 'claim'} ${crm.claimId}.`, 5000);
+          bram.addMemory(this.tick, `Filed ${fields.insured_name || 'an intake'} into Atlas PA (claim ${crm.claimId}, ${crm.created ? 'new' : 'existing'}).`);
+        }
+      } else {
+        this.log({ agent: filer, icon: '📁', kind: 'warn', text: `Atlas PA filing skipped — ${crm.reason}` });
       }
     } catch (err) {
       const reason = err instanceof llm.LlmUnavailableError ? err.reason : 'api_error';
