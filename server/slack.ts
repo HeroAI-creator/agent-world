@@ -1,11 +1,11 @@
 // Tessa on Slack — a Socket Mode bot that runs the Armada intake pipeline.
 //
 // DM Tessa a photo of an intake form (or @mention her with one in a channel
-// she's been invited to) and she does exactly what her in-game self does:
-// Claude reads the form, the Welcome Letter + Notice to Insurance are filled,
-// Resend emails them to the firm, and the intake is filed into Atlas PA.
-// She narrates each step in the Slack thread and uploads the drafted .docx
-// files back into it. Text-only DMs get a short in-character reply.
+// she's been invited to): Claude reads the form, the Welcome Letter + Notice
+// to Insurance are filled and uploaded straight back into the thread for
+// review, and the intake is filed into Atlas PA. Nothing is emailed — the
+// documents stay in Slack (unlike the in-game upload panel, which emails the
+// firm via Resend). Text-only DMs get a short in-character reply.
 //
 // Built on @slack/socket-mode + @slack/web-api (not Bolt — Bolt v5 peer-locks
 // to Express 5 types and this server is on Express 4). Socket Mode dials OUT
@@ -18,7 +18,7 @@
 import { SocketModeClient } from '@slack/socket-mode';
 import { WebClient, LogLevel } from '@slack/web-api';
 import * as llm from './llm.js';
-import { emailIntake, fillTemplates, fileIntakeToCrm, type FilledDoc } from './intake.js';
+import { fillTemplates, fileIntakeToCrm, type FilledDoc } from './intake.js';
 import type { Simulation } from './simulation.js';
 import type { IntakeFields } from './types.js';
 
@@ -220,13 +220,6 @@ async function runIntake(
 
     const docs = fillTemplates(fields);
     await uploadDocs(web, msg.channel, thread, docs);
-
-    const mail = await emailIntake(fields, docs);
-    await post(
-      mail.sent
-        ? `📧 Emailed both documents to *${mail.to}*${mail.id ? ` _(Resend ${mail.id})_` : ''}.`
-        : `📧 Documents drafted, but I didn't email them — ${mail.reason}`,
-    );
 
     const crm = await fileIntakeToCrm(fields, docs, { base64: imageB64, mediaType, filename });
     await post(

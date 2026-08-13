@@ -3,8 +3,9 @@
 Tessa runs as a **Socket Mode** Slack app: the server dials out to Slack, so no
 public URL, domain, or SSL is needed. She works from the same server as the
 game — DM her an intake photo from any device and she drafts the Welcome
-Letter + Notice to Insurance, emails them to the firm, and files the claim
-into Atlas PA, narrating every step in the thread. Meanwhile her in-game self
+Letter + Notice to Insurance, uploads them into the thread for review, and
+files the claim into Atlas PA, narrating every step. Nothing is emailed —
+the documents stay right there in Slack. Meanwhile her in-game self
 walks to the Market Stall and works on it, live.
 
 ## 1. Create the Slack app (one time)
@@ -56,8 +57,8 @@ Slack: Tessa is online via Socket Mode in "<your workspace>" — DM her an intak
   sending an intake photo).
 
 She answers in a thread on your message: what she read off the form (verify
-it!), the two drafted `.docx` uploaded for review, the email confirmation, and
-the Atlas PA claim number.
+it!), the two drafted `.docx` uploaded for review, and the Atlas PA claim
+number.
 
 ## Troubleshooting
 
@@ -68,5 +69,4 @@ the Atlas PA claim number.
 | She ignores channel messages | She only acts on @mentions in channels, and must be `/invite`d first. |
 | `not_in_channel` errors | `/invite @Tessa` to that channel. |
 | She says her "reading glasses are missing" | `ANTHROPIC_API_KEY` is unset on the server. |
-| Docs drafted but "didn't email them" | `RESEND_API_KEY` unset, or the From domain isn't verified in Resend. |
 | Changed scopes/events later | **Reinstall** the app (Install App → Reinstall) — scope changes need it. |
