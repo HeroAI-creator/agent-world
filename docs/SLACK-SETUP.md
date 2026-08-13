@@ -56,9 +56,9 @@ Slack: Tessa is online via Socket Mode in "<your workspace>" — DM her an intak
 - Text-only DMs get a short in-character reply (she'll steer you toward
   sending an intake photo).
 
-She answers in a thread on your message: what she read off the form (verify
-it!), the two drafted `.docx` uploaded for review, and the Atlas PA claim
-number.
+She answers right in the chat (in channels she uses a thread under your
+mention): what she read off the form (verify it!), the two drafted `.docx`
+uploaded for review, and the Atlas PA claim number.
 
 ## Troubleshooting
 

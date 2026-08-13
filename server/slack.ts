@@ -2,8 +2,9 @@
 //
 // DM Tessa a photo of an intake form (or @mention her with one in a channel
 // she's been invited to): Claude reads the form, the Welcome Letter + Notice
-// to Insurance are filled and uploaded straight back into the thread for
-// review, and the intake is filed into Atlas PA. Nothing is emailed — the
+// to Insurance are filled and uploaded straight back into the conversation
+// for review (right in the chat for DMs; in a thread when in a channel),
+// and the intake is filed into Atlas PA. Nothing is emailed — the
 // documents stay in Slack (unlike the in-game upload panel, which emails the
 // firm via Resend). Text-only DMs get a short in-character reply.
 //
@@ -154,9 +155,11 @@ async function handleMessage(
   if (!isDm && !mentioned) return; // in channels/group DMs she only acts when @mentioned
   if (alreadyHandled(msg)) return;
 
-  const thread = msg.thread_ts || msg.ts;
+  // In a DM she talks straight into the chat; in channels she keeps each
+  // intake in a tidy thread under the @mention instead of flooding the room.
+  const thread = isDm ? msg.thread_ts : msg.thread_ts || msg.ts;
   const post = async (text: string): Promise<void> => {
-    await web.chat.postMessage({ channel: msg.channel, thread_ts: thread, text });
+    await web.chat.postMessage({ channel: msg.channel, ...(thread ? { thread_ts: thread } : {}), text });
   };
 
   const photos = (msg.files || []).filter(isIntakePhoto);
@@ -180,7 +183,7 @@ async function handleMessage(
   }
 
   for (const photo of photos) {
-    await runIntake(photo, msg, post, web, botToken, sim);
+    await runIntake(photo, msg, post, web, botToken, thread, sim);
   }
 }
 
@@ -194,10 +197,10 @@ async function runIntake(
   post: PostFn,
   web: WebClient,
   botToken: string,
+  thread: string | undefined,
   sim?: Simulation,
 ): Promise<void> {
   const filename = file.name || 'intake.jpg';
-  const thread = msg.thread_ts || msg.ts;
   try {
     await post(`📋 On it — reading *${filename}*…`);
     sim?.mirrorSlackIntake('received', filename);
@@ -243,10 +246,10 @@ async function runIntake(
   }
 }
 
-async function uploadDocs(web: WebClient, channel: string, thread: string, docs: FilledDoc[]): Promise<void> {
+async function uploadDocs(web: WebClient, channel: string, thread: string | undefined, docs: FilledDoc[]): Promise<void> {
   await web.files.uploadV2({
     channel_id: channel,
-    thread_ts: thread,
+    ...(thread ? { thread_ts: thread } : {}),
     initial_comment: '📝 Drafted and ready for review:',
     file_uploads: docs.map((d) => ({ file: d.content, filename: d.filename })),
   });
