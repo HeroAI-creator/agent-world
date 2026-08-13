@@ -1,6 +1,6 @@
 // Tessa on Slack — a Socket Mode bot that runs the Armada intake pipeline.
 //
-// DM Tessa a photo of an intake form (or @mention her with one in a channel
+// DM Tessa a photo or PDF of an intake form (or @mention her with one in a channel
 // she's been invited to): Claude reads the form, the Welcome Letter + Notice
 // to Insurance are filled and uploaded straight back into the conversation
 // for review (right in the chat for DMs; in a thread when in a channel),
@@ -54,12 +54,14 @@ interface SocketEventArgs {
 }
 
 const IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
+const PDF_TYPE = 'application/pdf';
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // Anthropic's per-image ceiling
+const MAX_PDF_BYTES = 10 * 1024 * 1024; // stays well under the API's 32MB request cap
 
-const TESSA_SYSTEM = `You are Tessa, Armada Public Adjusting's intake agent, chatting in Slack. Warm, competent, brief — 1 to 3 short sentences, the occasional emoji. Your one job: when someone sends a PHOTO of a claim intake form, you read it, draft the Welcome Letter and the Notice to Insurance, email them to the firm, and file the claim into the Atlas PA CRM. If asked anything else, answer briefly and remind them you're happiest when handed an intake photo.`;
+const TESSA_SYSTEM = `You are Tessa, Armada Public Adjusting's intake agent, chatting in Slack. Warm, competent, brief — 1 to 3 short sentences, the occasional emoji. Your one job: when someone sends a PHOTO or PDF of a claim intake form, you read it, draft the Welcome Letter and the Notice to Insurance, drop them back into the chat, and file the claim into the Atlas PA CRM. If asked anything else, answer briefly and remind them you're happiest when handed an intake form.`;
 
 const HELP_REPLY =
-  "Hi! I'm Tessa 📋 Send me a photo of a claim intake form and I'll read it, draft the Welcome Letter + Notice to Insurance, email them to the firm, and file the claim into Atlas PA.";
+  "Hi! I'm Tessa 📋 Send me a photo or PDF of a claim intake form and I'll read it, draft the Welcome Letter + Notice to Insurance right here in the chat, and file the claim into Atlas PA.";
 
 // Slack redelivers events it thinks we missed; remember what we've handled.
 const seen = new Map<string, number>();
@@ -74,8 +76,9 @@ function alreadyHandled(msg: IncomingMessage): boolean {
   return false;
 }
 
-function isIntakePhoto(f: SlackFile): boolean {
-  return IMAGE_TYPES.has(f.mimetype || '') && Boolean(f.url_private_download);
+function isIntakeFile(f: SlackFile): boolean {
+  const mt = f.mimetype || '';
+  return (IMAGE_TYPES.has(mt) || mt === PDF_TYPE) && Boolean(f.url_private_download);
 }
 
 /** The nine fields, Slack-mrkdwn formatted, so a human can eyeball-verify the
@@ -162,10 +165,10 @@ async function handleMessage(
     await web.chat.postMessage({ channel: msg.channel, ...(thread ? { thread_ts: thread } : {}), text });
   };
 
-  const photos = (msg.files || []).filter(isIntakePhoto);
-  if (photos.length === 0) {
+  const intakeFiles = (msg.files || []).filter(isIntakeFile);
+  if (intakeFiles.length === 0) {
     if ((msg.files || []).length > 0) {
-      await post('I can only read *photos* of intake forms for now — JPG, PNG, WebP, or GIF. Mind re-sending it as one of those? 📋');
+      await post('I can read *photos or PDFs* of intake forms — JPG, PNG, WebP, GIF, or PDF. Mind re-sending it as one of those? 📋');
       return;
     }
     // Text-only message → a short in-character reply (canned when the LLM is unavailable).
@@ -182,8 +185,8 @@ async function handleMessage(
     return;
   }
 
-  for (const photo of photos) {
-    await runIntake(photo, msg, post, web, botToken, thread, sim);
+  for (const intakeFile of intakeFiles) {
+    await runIntake(intakeFile, msg, post, web, botToken, thread, sim);
   }
 }
 
@@ -205,8 +208,9 @@ async function runIntake(
     await post(`📋 On it — reading *${filename}*…`);
     sim?.mirrorSlackIntake('received', filename);
 
-    if ((file.size || 0) > MAX_IMAGE_BYTES) {
-      await post('That photo is over 5MB — more than I can read in one gulp. Could you send a smaller copy? (A screenshot of it works great.)');
+    const isPdf = file.mimetype === PDF_TYPE;
+    if ((file.size || 0) > (isPdf ? MAX_PDF_BYTES : MAX_IMAGE_BYTES)) {
+      await post(`That file is over ${isPdf ? '10MB' : '5MB'} — more than I can read in one gulp. Could you send a smaller copy? (A screenshot of it works great.)`);
       sim?.mirrorSlackIntake('failed', `${filename} was too large`);
       return;
     }
@@ -215,16 +219,16 @@ async function runIntake(
       headers: { Authorization: `Bearer ${botToken}` },
     });
     if (!resp.ok) throw new Error(`could not download the file from Slack (HTTP ${resp.status})`);
-    const imageB64 = Buffer.from(await resp.arrayBuffer()).toString('base64');
+    const fileB64 = Buffer.from(await resp.arrayBuffer()).toString('base64');
     const mediaType = file.mimetype || 'image/jpeg';
 
-    const fields = await llm.extractIntakeFields(imageB64, mediaType);
+    const fields = await llm.extractIntakeFields(fileB64, mediaType);
     await post(fieldSummary(fields));
 
     const docs = fillTemplates(fields);
     await uploadDocs(web, msg.channel, thread, docs);
 
-    const crm = await fileIntakeToCrm(fields, docs, { base64: imageB64, mediaType, filename });
+    const crm = await fileIntakeToCrm(fields, docs, { base64: fileB64, mediaType, filename });
     await post(
       crm.ok
         ? `📁 Bram filed it into Atlas PA — ${crm.created ? 'created new claim' : 'added to existing claim'} *${crm.claimId}*. ✅ All done!`

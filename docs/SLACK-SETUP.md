@@ -49,8 +49,9 @@ Slack: Tessa is online via Socket Mode in "<your workspace>" — DM her an intak
 
 ## 4. Use her
 
-- Open Slack → **Apps** (bottom of the sidebar) → **Tessa** → send her a
-  photo (JPG/PNG/WebP/GIF, up to 5MB) of an intake form. That's it.
+- Open Slack → **Apps** (bottom of the sidebar) → **Tessa** → send her an
+  intake form as a photo (JPG/PNG/WebP/GIF, up to 5MB) or a PDF (up to
+  10MB). That's it.
 - In a channel: `/invite @Tessa`, then @mention her in a message that has the
   photo attached. She only reacts in channels when explicitly @mentioned.
 - Text-only DMs get a short in-character reply (she'll steer you toward

@@ -143,13 +143,18 @@ function toLlmError(err: unknown): LlmUnavailableError {
   return new LlmUnavailableError(`network error calling Anthropic: ${(err as Error).message}`, 'api_error');
 }
 
-export async function extractIntakeFields(imageB64: string, mediaType: string): Promise<IntakeFields> {
+export async function extractIntakeFields(fileB64: string, mediaType: string): Promise<IntakeFields> {
   pruneWindow();
   if (callTimes.length >= maxCallsPerMin()) {
     throw new LlmUnavailableError(`local rate cap reached (${maxCallsPerMin()} calls/min)`, 'rate_limit_local');
   }
   const anthropic = getClient();
+  // PDFs ride as a native document block; anything else is treated as an image.
   const media = (['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(mediaType) ? mediaType : 'image/jpeg') as ImageMediaType;
+  const fileBlock: Anthropic.ContentBlockParam =
+    mediaType === 'application/pdf'
+      ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: fileB64 } }
+      : { type: 'image', source: { type: 'base64', media_type: media, data: fileB64 } };
   callTimes.push(Date.now());
   totals.calls += 1;
   try {
@@ -162,11 +167,11 @@ export async function extractIntakeFields(imageB64: string, mediaType: string): 
         {
           role: 'user',
           content: [
-            { type: 'image', source: { type: 'base64', media_type: media, data: imageB64 } },
+            fileBlock,
             {
               type: 'text',
               text:
-                'This image is a completed insurance claim intake form for Armada Public Adjusting. ' +
+                'This is a completed insurance claim intake form for Armada Public Adjusting. ' +
                 'Read it carefully and call record_intake with every field, using the exact values written on the form. ' +
                 'For any field that is not present or not legible, pass an empty string. Do not guess or invent values.',
             },
