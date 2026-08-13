@@ -12,8 +12,9 @@ walks to the Market Stall and works on it, live.
 1. Go to <https://api.slack.com/apps> and sign in to your workspace.
    (No workspace yet? Create one free at <https://slack.com/get-started>.)
 2. **Create New App** → **From an app manifest** → pick your workspace.
-3. Paste the contents of [`slack-app-manifest.yml`](../slack-app-manifest.yml)
-   (choose the YAML tab) → **Next** → **Create**.
+3. Paste the contents of [`slack-app-manifest.json`](../slack-app-manifest.json)
+   into the code box (the default **JSON** tab), replacing the sample that's
+   already there → **Next** → **Create**.
 
 ## 2. Get the two tokens
 
