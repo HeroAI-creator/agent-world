@@ -1,0 +1,34 @@
+# Slack app manifest for Tessa, the Armada intake agent.
+# Create the app at https://api.slack.com/apps → "Create New App" →
+# "From an app manifest" → pick your workspace → paste this file.
+# Full walkthrough: docs/SLACK-SETUP.md
+display_information:
+  name: Tessa — Armada Intake
+  description: Send Tessa an intake photo — she drafts the documents, emails the firm, and files the claim.
+  background_color: "#1f1a13"
+features:
+  bot_user:
+    display_name: Tessa
+    always_online: true
+oauth_config:
+  scopes:
+    bot:
+      - chat:write # narrate the intake in-thread
+      - files:read # download the intake photo you upload
+      - files:write # upload the drafted .docx back into the thread
+      - im:history # receive your DMs
+      - channels:history # see @Tessa mentions in public channels she's in
+      - groups:history # …and in private channels
+      - mpim:history # …and in group DMs
+settings:
+  event_subscriptions:
+    bot_events:
+      - message.im
+      - message.channels
+      - message.groups
+      - message.mpim
+  interactivity:
+    is_enabled: false
+  org_deploy_enabled: false
+  socket_mode_enabled: true
+  token_rotation_enabled: false

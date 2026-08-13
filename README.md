@@ -44,6 +44,8 @@ you why. An invalid key degrades the same way (clear ⚠️ lines, no crash).
 | `MAX_API_CALLS_PER_MIN` | `10` | Hard local rate cap. When hit, agents wander and a warning is logged. |
 | `MODEL` | `claude-haiku-4-5-20251001` | Model for decisions + conversations. |
 | `API_PORT` | `3001` | Simulation server port (Vite proxies `/ws` to it in dev). |
+| `SLACK_BOT_TOKEN` | *(empty)* | Puts Tessa on Slack (`xoxb-…`, from **Install App**). Setup: [docs/SLACK-SETUP.md](docs/SLACK-SETUP.md). |
+| `SLACK_APP_TOKEN` | *(empty)* | App-level token (`xapp-…`, scope `connections:write`) for Socket Mode. |
 
 ## Cost
 

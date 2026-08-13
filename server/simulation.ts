@@ -742,6 +742,40 @@ export class Simulation {
     }
   }
 
+  /** Mirror an intake that arrived over Slack: Tessa reacts in the village
+   *  while the Slack bot (server/slack.ts) runs the actual pipeline. */
+  mirrorSlackIntake(phase: 'received' | 'done' | 'failed', detail: string): void {
+    const tessa = this.agentById('tessa');
+    if (!tessa) return;
+    if (phase === 'received') {
+      this.log({ agent: tessa, icon: '📨', kind: 'system', text: `picked up an intake from Slack (${detail}) — heading to the Market Stall to process it` });
+      this.bubble(tessa, '📨 A new intake just came in over Slack! On it…', 4500);
+      tessa.addMemory(this.tick, `Received an intake over Slack (${detail}).`);
+      tessa.task = { text: `Process Slack intake: ${detail}`, status: 'doing', assignedTick: this.tick, note: 'Reading the form…' };
+      if (tessa.state !== 'talking') {
+        tessa.decisionToken++;
+        tessa.clearPath();
+        const stall = this.world.resolveLocation('Market Stall');
+        if (stall) this.startTravel(tessa, 'work', stall, 30);
+      }
+    } else if (phase === 'done') {
+      this.log({ agent: tessa, icon: '✅', kind: 'system', text: `finished the Slack intake — ${detail}` });
+      this.bubble(tessa, `✅ Slack intake done — ${detail}!`, 5000);
+      tessa.addMemory(this.tick, `Processed a Slack intake (${detail}).`);
+      if (tessa.task) {
+        tessa.task.status = 'done';
+        tessa.task.note = 'Done via Slack';
+      }
+    } else {
+      this.log({ agent: tessa, icon: '⚠️', kind: 'warn', text: `couldn't process the Slack intake — ${detail}` });
+      this.bubble(tessa, "Hmm — that Slack intake didn't go through…", 5000);
+      if (tessa.task) {
+        tessa.task.status = 'todo';
+        tessa.task.note = 'Slack intake failed';
+      }
+    }
+  }
+
   // ---- Mira scheduling (route optimization + Outlook + email) ----
 
   /** Mira's job: read pasted appointments, optimize the driving route, put the
