@@ -1,0 +1,45 @@
+{
+    "display_information": {
+        "name": "Mira - Scheduling",
+        "description": "Tell Mira about an inspection and she books, moves, confirms, or cancels it on the Outlook calendars.",
+        "background_color": "#2f6b3a"
+    },
+    "features": {
+        "app_home": {
+            "messages_tab_enabled": true,
+            "messages_tab_read_only_enabled": false
+        },
+        "bot_user": {
+            "display_name": "Mira",
+            "always_online": true
+        }
+    },
+    "oauth_config": {
+        "scopes": {
+            "bot": [
+                "chat:write",
+                "im:history",
+                "channels:history",
+                "groups:history",
+                "mpim:history",
+                "users:read"
+            ]
+        }
+    },
+    "settings": {
+        "event_subscriptions": {
+            "bot_events": [
+                "message.im",
+                "message.channels",
+                "message.groups",
+                "message.mpim"
+            ]
+        },
+        "interactivity": {
+            "is_enabled": false
+        },
+        "org_deploy_enabled": false,
+        "socket_mode_enabled": true,
+        "token_rotation_enabled": false
+    }
+}

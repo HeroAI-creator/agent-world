@@ -220,3 +220,29 @@ export interface Appointment {
   /** Visit length in minutes if stated, else 0 (a default is applied when scheduling). */
   durationMin: number;
 }
+
+/** One parsed calendar command for Mira's Slack desk (create/edit/confirm/cancel/list). */
+export interface MiraCommand {
+  action: 'create' | 'edit' | 'confirm' | 'cancel' | 'list' | 'other';
+  /** First names of the people whose calendars are involved ("me" allowed). */
+  people: string[];
+  /** Event date YYYY-MM-DD ('' if the user never gave one). */
+  date: string;
+  /** Start time 24h HH:MM for create ('' if not given). */
+  time: string;
+  durationMin: number;
+  /** Event title, e.g. "Inspection — Duran" ('' → default). */
+  title: string;
+  location: string;
+  /** Free-text note to include in the event body. */
+  note: string;
+  /** false when the user says unconfirmed / tentative / pencil it in. */
+  confirmed: boolean;
+  /** For edits: the new date/time ('' = unchanged). */
+  newDate: string;
+  newTime: string;
+  /** Words that identify WHICH event to edit ("10am", "duran", "inspection"). */
+  matchHint: string;
+  /** For action="other": Mira's conversational reply. */
+  reply: string;
+}

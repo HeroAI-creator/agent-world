@@ -61,6 +61,33 @@ She answers right in the chat (in channels she uses a thread under your
 mention): what she read off the form (verify it!), the two drafted `.docx`
 uploaded for review, and the Atlas PA claim number.
 
+## Mira — the scheduling desk (second app, same recipe)
+
+Mira books inspections on the firm's Outlook calendars from plain English.
+She's a **separate Slack app** so the front desk really DMs "Mira":
+
+1. Repeat step 1 with [`mira-slack-manifest.json`](../mira-slack-manifest.json).
+2. Repeat step 2 (app-level token + install) and put the two tokens in `.env`
+   as `MIRA_SLACK_BOT_TOKEN` / `MIRA_SLACK_APP_TOKEN`.
+3. Map names to mailboxes in `.env`:
+   `MIRA_PEOPLE=brielle=brielle@armadapa.com,andrew=andrew@armadapa.com`
+   ("my calendar" resolves from the sender's Slack first name.)
+4. The Outlook side reuses the existing `MS_*` variables (app-only Microsoft
+   Graph with `Calendars.ReadWrite`) — no new Microsoft setup.
+
+What she understands:
+
+- *"Put an inspection on Andrew's and my calendar for Sept 5 at 10am, note:
+  wind damage, bring ladder"* → one event on each mailbox, note in the body
+- *"…it's unconfirmed but still put it on"* → booked **Tentative** with
+  "(unconfirmed)" in the title; *"confirm the 10am on the 5th"* flips it solid
+- *"Move the inspection on the 5th to the 9th"* / *"…to 2pm instead"*
+- *"Cancel the 2pm inspection on the 9th"*
+- *"What's on the calendar Friday?"* → reads everyone's day back
+
+If a day has several matches she lists them and asks which one (answer with
+the time: "the 10am one").
+
 ## Troubleshooting
 
 | Symptom | Cause / fix |

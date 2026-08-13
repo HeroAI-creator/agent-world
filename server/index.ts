@@ -11,6 +11,7 @@ import { Agent, loadAgentSeeds } from './agent.js';
 import * as llm from './llm.js';
 import { Simulation } from './simulation.js';
 import { startSlackBot } from './slack.js';
+import { startMiraSlackBot } from './slackMira.js';
 import type { ClientMsg, InitMsg, ServerMsg } from './types.js';
 import { World } from './world.js';
 
@@ -128,4 +129,5 @@ server.listen(PORT, () => {
   console.log('');
   sim.start();
   void startSlackBot(sim);
+  void startMiraSlackBot(sim);
 });

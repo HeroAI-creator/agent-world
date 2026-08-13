@@ -776,6 +776,27 @@ export class Simulation {
     }
   }
 
+  /** Mirror a calendar request that arrived over Slack: Mira reacts in the
+   *  village while the Slack bot (server/slackMira.ts) works the calendars. */
+  mirrorSlackSchedule(phase: 'done' | 'failed', detail: string): void {
+    const mira = this.agentById('mira');
+    if (!mira) return;
+    if (phase === 'done') {
+      this.log({ agent: mira, icon: '📅', kind: 'system', text: `worked the Outlook calendars from Slack — ${detail}` });
+      this.bubble(mira, `📅 Calendar tended — ${detail}!`, 5000);
+      mira.addMemory(this.tick, `Handled a Slack calendar request (${detail}).`);
+      if (mira.state !== 'talking') {
+        mira.decisionToken++;
+        mira.clearPath();
+        const garden = this.world.resolveLocation('Garden');
+        if (garden) this.startTravel(mira, 'work', garden, 20);
+      }
+    } else {
+      this.log({ agent: mira, icon: '⚠️', kind: 'warn', text: `couldn't finish a Slack calendar request — ${detail}` });
+      this.bubble(mira, "Hmm — that calendar request wilted on me…", 5000);
+    }
+  }
+
   // ---- Mira scheduling (route optimization + Outlook + email) ----
 
   /** Mira's job: read pasted appointments, optimize the driving route, put the

@@ -2,7 +2,7 @@
 // All LLM access happens here, server-side only. The key never reaches the browser.
 
 import Anthropic from '@anthropic-ai/sdk';
-import type { Appointment, IntakeFields, LlmStats } from './types.js';
+import type { Appointment, IntakeFields, LlmStats, MiraCommand } from './types.js';
 
 // Claude Haiku 4.5 pricing, $ per million tokens.
 const PRICE_IN_PER_MTOK = 1.0;
@@ -266,6 +266,104 @@ export async function extractAppointments(text: string, today: string): Promise<
         };
       })
       .filter((a) => a.address.length > 0);
+  } catch (err) {
+    throw toLlmError(err);
+  }
+}
+
+// ---- Mira's Slack calendar desk: parse one scheduling command ----
+//
+// Front desk chats naturally ("put an inspection on Andrew's and my calendar
+// for the 5th at 10, unconfirmed"; "move the 10am on the 5th to 2pm"). A
+// forced tool call turns each message into one structured MiraCommand the
+// Slack bot executes against Outlook.
+
+const MIRA_COMMAND_TOOL: Anthropic.Tool = {
+  name: 'calendar_command',
+  description: "Record the single calendar action the user's message asks for (or 'other' with a reply).",
+  input_schema: {
+    type: 'object',
+    properties: {
+      action: {
+        type: 'string',
+        enum: ['create', 'edit', 'confirm', 'cancel', 'list', 'other'],
+        description:
+          "create = book a new event. edit = move/change an existing one. confirm = mark a tentative event confirmed. cancel = remove one. list = read out a day's calendar. other = anything else (chitchat, questions).",
+      },
+      people: {
+        type: 'array',
+        items: { type: 'string' },
+        description:
+          'First names of everyone whose calendar is involved. Use "me" for the sender themself ("my calendar"). Empty array if nobody is named.',
+      },
+      date: { type: 'string', description: 'Event date as YYYY-MM-DD (resolve relative dates using today). Empty string if never given.' },
+      time: { type: 'string', description: 'Start time, 24-hour HH:MM. Empty string if not given.' },
+      duration_min: { type: 'number', description: 'Length in minutes if stated, else 0.' },
+      title: { type: 'string', description: 'Short event title like "Inspection — Duran" if derivable (client/claim name), else empty string.' },
+      location: { type: 'string', description: 'Property address / place if given, else empty string.' },
+      note: { type: 'string', description: 'Any note text the user wants attached to the event, else empty string.' },
+      confirmed: { type: 'boolean', description: 'false if the user says unconfirmed / tentative / not confirmed / pencil it in. true otherwise.' },
+      new_date: { type: 'string', description: 'For edit: the NEW date YYYY-MM-DD. Empty string if the date is unchanged.' },
+      new_time: { type: 'string', description: 'For edit: the NEW start time 24h HH:MM. Empty string if the time is unchanged.' },
+      match_hint: { type: 'string', description: 'For edit/confirm/cancel: words identifying WHICH event ("10am", client name, "inspection"). Empty string if none.' },
+      reply: { type: 'string', description: "For action=other: Mira's short in-character reply (friendly herbalist, 1-2 sentences). Empty string otherwise." },
+    },
+    required: ['action', 'people', 'date', 'time', 'duration_min', 'title', 'location', 'note', 'confirmed', 'new_date', 'new_time', 'match_hint', 'reply'],
+  },
+};
+
+export async function parseMiraCommand(text: string, today: string, knownPeople: string[]): Promise<MiraCommand> {
+  pruneWindow();
+  if (callTimes.length >= maxCallsPerMin()) {
+    throw new LlmUnavailableError(`local rate cap reached (${maxCallsPerMin()} calls/min)`, 'rate_limit_local');
+  }
+  const anthropic = getClient();
+  callTimes.push(Date.now());
+  totals.calls += 1;
+  try {
+    const response = await anthropic.messages.create({
+      model: MODEL,
+      max_tokens: 700,
+      tools: [MIRA_COMMAND_TOOL],
+      tool_choice: { type: 'tool', name: 'calendar_command' },
+      messages: [
+        {
+          role: 'user',
+          content:
+            `Today is ${today} (time zone: US Eastern). You are Mira, the scheduling agent for Armada Public Adjusting, ` +
+            `reading one Slack message from the front desk. Known calendar people: ${knownPeople.join(', ') || '(none configured)'}. ` +
+            'Call calendar_command once for the single action the message asks for. Resolve relative dates ("next Friday", "the 5th") ' +
+            'to YYYY-MM-DD using today. Times are 24-hour HH:MM (e.g. "10am" → "10:00", "2:30pm" → "14:30"). ' +
+            '"my calendar" / "me too" means the person "me". Words like unconfirmed, tentative, not locked in, pencil it in → confirmed=false. ' +
+            'If the message asks to change/move/reschedule an event, action=edit with new_date/new_time. Do not invent dates, times, or people.\n\n----\n' +
+            text,
+        },
+      ],
+    });
+    totals.inputTokens += response.usage.input_tokens;
+    totals.outputTokens += response.usage.output_tokens;
+    const block = response.content.find((b) => b.type === 'tool_use');
+    if (!block || block.type !== 'tool_use') {
+      throw new LlmUnavailableError('model did not return a calendar command', 'api_error');
+    }
+    const o = (block.input ?? {}) as Record<string, unknown>;
+    const str = (k: string): string => (typeof o[k] === 'string' ? (o[k] as string).trim() : '');
+    const actions = ['create', 'edit', 'confirm', 'cancel', 'list', 'other'];
+    return {
+      action: (actions.includes(str('action')) ? str('action') : 'other') as MiraCommand['action'],
+      people: Array.isArray(o.people) ? (o.people as unknown[]).map((p) => String(p).trim().toLowerCase()).filter(Boolean) : [],
+      date: str('date'),
+      time: str('time'),
+      durationMin: typeof o.duration_min === 'number' && o.duration_min > 0 ? Math.round(o.duration_min) : 0,
+      title: str('title'),
+      location: str('location'),
+      note: str('note'),
+      confirmed: o.confirmed !== false,
+      newDate: str('new_date'),
+      newTime: str('new_time'),
+      matchHint: str('match_hint'),
+      reply: str('reply'),
+    };
   } catch (err) {
     throw toLlmError(err);
   }
