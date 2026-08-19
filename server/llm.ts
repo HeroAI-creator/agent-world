@@ -354,8 +354,10 @@ export async function extractIntakeFromTranscript(
             'reading the form aloud, label then answer). The firm fills a Claim Intake Sheet from it. ' +
             'Call record_intake_from_call with every field the recording actually states — names and ' +
             'addresses as spoken (fix obvious transcription stumbles like spelled-out letters), phone numbers as ' +
-            'digits, dates as written dates, yes/no answers as short phrases. For anything the call never mentions, ' +
-            'pass an empty string. Do not guess or invent values. Also write the call_notes summary.\n\n----\n' +
+            'digits, dates as written dates, yes/no answers as short phrases. The front desk often REPEATS or ' +
+            'confirms the homeowner\'s answers back — treat the front desk\'s repetitions and spellings as the ' +
+            'authoritative values. For anything the recording never mentions, pass an empty string. Do not guess ' +
+            'or invent values. Also write the call_notes summary.\n\n----\n' +
             transcript,
         },
       ],
@@ -372,6 +374,56 @@ export async function extractIntakeFromTranscript(
       fields: normalizeIntake(raw),
       extras: normalizeExtras(raw),
       callNotes: typeof raw.call_notes === 'string' ? raw.call_notes.trim() : '',
+    };
+  } catch (err) {
+    throw toLlmError(err);
+  }
+}
+
+/** Apply a front-desk correction ("phone should be 304-820-4447") to an
+ *  already-extracted intake. Same tool as extraction, so the output shape is
+ *  identical; the model is told to change ONLY what the instruction says. */
+export async function patchIntake(
+  current: { fields: IntakeFields; extras: IntakeExtras; callNotes: string },
+  instruction: string,
+): Promise<{ fields: IntakeFields; extras: IntakeExtras; callNotes: string }> {
+  pruneWindow();
+  if (callTimes.length >= maxCallsPerMin()) {
+    throw new LlmUnavailableError(`local rate cap reached (${maxCallsPerMin()} calls/min)`, 'rate_limit_local');
+  }
+  const anthropic = getClient();
+  callTimes.push(Date.now());
+  totals.calls += 1;
+  try {
+    const response = await anthropic.messages.create({
+      model: INTAKE_MODEL,
+      max_tokens: 2000,
+      tools: [TRANSCRIPT_TOOL],
+      tool_choice: { type: 'tool', name: 'record_intake_from_call' },
+      messages: [
+        {
+          role: 'user',
+          content:
+            'Current Claim Intake Sheet values as JSON:\n' +
+            JSON.stringify({ ...current.fields, ...current.extras, call_notes: current.callNotes }) +
+            `\n\nThe front desk asks for this correction: "${instruction}"\n\n` +
+            'Call record_intake_from_call with ALL fields: apply the correction exactly as asked, and keep every ' +
+            'other field unchanged from the JSON above. Do not invent new information.',
+        },
+      ],
+    });
+    totals.inputTokens += response.usage.input_tokens;
+    totals.outputTokens += response.usage.output_tokens;
+    const block = response.content.find((b) => b.type === 'tool_use');
+    if (!block || block.type !== 'tool_use') {
+      throw new LlmUnavailableError('model did not return the corrected intake', 'api_error');
+    }
+    const raw = block.input as Partial<Record<keyof IntakeFields, unknown>> &
+      Partial<Record<keyof IntakeExtras, unknown>> & { call_notes?: unknown };
+    return {
+      fields: normalizeIntake(raw),
+      extras: normalizeExtras(raw),
+      callNotes: typeof raw.call_notes === 'string' ? raw.call_notes.trim() : current.callNotes,
     };
   } catch (err) {
     throw toLlmError(err);

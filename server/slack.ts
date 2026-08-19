@@ -21,9 +21,10 @@ import { SocketModeClient } from '@slack/socket-mode';
 import { WebClient, LogLevel } from '@slack/web-api';
 import * as llm from './llm.js';
 import { fillIntakeSheet, fillTemplates, fileIntakeToCrm, type FilledDoc } from './intake.js';
+import { createClaimWizardLead } from './claimwizard.js';
 import { transcribeAudio, transcriptionConfigured } from './transcribe.js';
 import type { Simulation } from './simulation.js';
-import type { IntakeFields } from './types.js';
+import type { IntakeExtras, IntakeFields } from './types.js';
 
 // The slices of Slack's message event this module actually uses. Slack's own
 // types are a sprawling union across subtypes; we narrow structurally instead.
@@ -65,6 +66,41 @@ const TESSA_SYSTEM = `You are Tessa, Armada Public Adjusting's intake agent, cha
 
 const HELP_REPLY =
   "Hi! I'm Tessa 📋 Send me an intake as a *photo or PDF* of the form — or a *recording of the intake call* 🎧 — and I'll fill the intake sheet, draft the Welcome Letter + Notice to Insurance right here in the chat, and file the claim into Atlas PA.";
+
+// ---- Pending voice intakes awaiting front-desk clearance ----
+//
+// A recorded-call intake stops at the Intake Sheet and WAITS: nothing is filed
+// anywhere until the person in the chat says "approve" (or corrects fields, or
+// adds more voice clips — long calls arrive as several 5-minute Slack clips and
+// merge into one intake). Keyed per conversation; a pending intake left
+// unanswered expires after 12 hours.
+interface PendingIntake {
+  fields: IntakeFields;
+  extras: IntakeExtras;
+  callNotes: string;
+  transcript: string;
+  filename: string;
+  audioB64: string;
+  audioType: string;
+  createdAt: number;
+}
+const pendingIntakes = new Map<string, PendingIntake>();
+const PENDING_TTL_MS = 12 * 60 * 60_000;
+
+function pendingFor(channel: string): PendingIntake | undefined {
+  const p = pendingIntakes.get(channel);
+  if (p && Date.now() - p.createdAt > PENDING_TTL_MS) {
+    pendingIntakes.delete(channel);
+    return undefined;
+  }
+  return p;
+}
+
+const APPROVE_RE = /^(approve[d]?|clear(ed)?|good|looks good|all good|file it|send it|go ahead|yes|ok(ay)?( file( it)?)?|👍)\b/i;
+const CANCEL_RE = /^(cancel|discard|scrap|start over|never ?mind|delete it)\b/i;
+
+const CLEARANCE_PROMPT =
+  '\n\n📌 *Review the sheet above.* Say *approve* and I\'ll file it to Atlas PA + ClaimWizard — or tell me what to fix (e.g. "phone should be 304-820-4447"). Long call? Keep sending clips and I\'ll merge them.';
 
 // Slack redelivers events it thinks we missed; remember what we've handled.
 const seen = new Map<string, number>();
@@ -181,8 +217,14 @@ async function handleMessage(
       await post('I can take intakes as *photos or PDFs* of the form (JPG, PNG, WebP, GIF, PDF) — or a *call recording* (m4a, mp3, wav, voice note). Mind re-sending one of those? 📋');
       return;
     }
-    // Text-only message → a short in-character reply (canned when the LLM is unavailable).
+    // Text with an intake awaiting clearance → approve / cancel / correction.
     const question = (msg.text || '').replace(/<@[^>]+>/g, '').trim();
+    const pending = pendingFor(msg.channel);
+    if (pending && question) {
+      await handlePendingText(pending, question, msg, post, web, thread, sim);
+      return;
+    }
+    // Text-only message → a short in-character reply (canned when the LLM is unavailable).
     let reply = HELP_REPLY;
     if (question) {
       try {
@@ -263,10 +305,9 @@ async function runIntake(
   }
 }
 
-/** Dictation intake: a recording of the homeowner <-> front desk call comes in,
- *  Whisper writes the transcript, Claude pulls the fields, and Tessa fills the
- *  Intake Sheet + Welcome Letter + carrier Notice and files it all — same
- *  finish line as a photo intake, no paper form required. */
+/** Voice intake, step 1 of 2: transcribe the recording (merging with any clips
+ *  already pending in this conversation), extract, and post the Intake Sheet
+ *  for CLEARANCE. Nothing is filed anywhere until the front desk approves. */
 async function runAudioIntake(
   file: SlackFile,
   msg: IncomingMessage,
@@ -282,12 +323,16 @@ async function runAudioIntake(
       await post("I got the recording, but my ears aren't set up yet — the server needs a GROQ_API_KEY (free at console.groq.com/keys) before I can transcribe calls. 🎧");
       return;
     }
-    await post(`🎧 Got the recording — listening to *${filename}*… (a longer call takes a minute)`);
-    sim?.mirrorSlackIntake('received', filename);
+    const existing = pendingFor(msg.channel);
+    await post(
+      existing
+        ? `🎧 Another clip — merging *${filename}* into the pending intake…`
+        : `🎧 Got the recording — listening to *${filename}*… (a longer call takes a minute)`,
+    );
+    if (!existing) sim?.mirrorSlackIntake('received', filename);
 
     if ((file.size || 0) > MAX_AUDIO_BYTES) {
       await post('That recording is over 24MB — more than I can transcribe in one go. Could you trim or re-export it a bit smaller?');
-      sim?.mirrorSlackIntake('failed', `${filename} was too large`);
       return;
     }
 
@@ -297,49 +342,131 @@ async function runAudioIntake(
     if (!resp.ok) throw new Error(`could not download the file from Slack (HTTP ${resp.status})`);
     const audio = Buffer.from(await resp.arrayBuffer());
 
-    const transcript = await transcribeAudio(audio, filename, file.mimetype || 'audio/mpeg');
+    const clipText = await transcribeAudio(audio, filename, file.mimetype || 'audio/mpeg');
+    const transcript = existing ? `${existing.transcript}\n\n[next clip]\n${clipText}` : clipText;
 
     const { fields, extras, callNotes } = await llm.extractIntakeFromTranscript(transcript);
-    await post(fieldSummary(fields) + (callNotes ? `\n🗒️ *Call notes:* ${callNotes}` : ''));
-
-    const docs = [fillIntakeSheet(fields, extras, callNotes, filename), ...fillTemplates(fields)];
-    const transcriptDoc: FilledDoc = {
-      filename: `Call Transcript - ${fields.insured_name || 'intake'}.txt`,
-      content: Buffer.from(transcript, 'utf8'),
-    };
-    await uploadDocs(web, msg.channel, thread, [...docs, transcriptDoc]);
-
-    const crm = await fileIntakeToCrm(fields, docs, {
-      base64: audio.toString('base64'),
-      mediaType: file.mimetype || 'audio/mpeg',
-      filename,
+    pendingIntakes.set(msg.channel, {
+      fields,
+      extras,
+      callNotes,
+      transcript,
+      filename: existing?.filename || filename,
+      audioB64: audio.toString('base64'), // most recent clip rides along to the CRM
+      audioType: file.mimetype || 'audio/mpeg',
+      createdAt: existing?.createdAt || Date.now(),
     });
-    await post(
-      crm.ok
-        ? `📁 Bram filed it into Atlas PA — ${crm.created ? 'created new claim' : 'added to existing claim'} *${crm.claimId}* (recording attached). ✅ All done!`
-        : `📁 Atlas PA filing skipped — ${crm.reason} ✅ Everything else is done!`,
-    );
-    sim?.mirrorSlackIntake('done', fields.insured_name || filename);
+
+    await post(fieldSummary(fields) + (callNotes ? `\n🗒️ *Call notes:* ${callNotes}` : ''));
+    await uploadDocs(web, msg.channel, thread, [fillIntakeSheet(fields, extras, callNotes, filename)], '📝 Intake Sheet — draft for review:');
+    await post(CLEARANCE_PROMPT.trim());
   } catch (err) {
-    const reason = err instanceof llm.LlmUnavailableError ? err.reason : '';
-    const why =
-      reason === 'no_key'
-        ? 'my reading glasses are missing — the server has no ANTHROPIC_API_KEY.'
-        : reason === 'auth'
-          ? 'the Anthropic API key was rejected.'
-          : reason === 'rate_limit_local'
-            ? "I'm a bit overwhelmed right now — try again in a minute."
-            : `something went wrong: ${(err as Error).message}`;
-    await post(`⚠️ Hmm — ${why}`).catch(() => {});
-    sim?.mirrorSlackIntake('failed', (err as Error).message);
+    await postIntakeError(err, post, sim);
   }
 }
 
-async function uploadDocs(web: WebClient, channel: string, thread: string | undefined, docs: FilledDoc[]): Promise<void> {
+/** Voice intake, step 2 of 2: the front desk answered — approve, cancel, or a
+ *  field correction. Approval is when the filing actually happens. */
+async function handlePendingText(
+  pending: PendingIntake,
+  text: string,
+  msg: IncomingMessage,
+  post: PostFn,
+  web: WebClient,
+  thread: string | undefined,
+  sim?: Simulation,
+): Promise<void> {
+  if (CANCEL_RE.test(text)) {
+    pendingIntakes.delete(msg.channel);
+    await post('🗑️ Scrapped — nothing was filed. Send a new recording whenever you\'re ready.');
+    return;
+  }
+
+  if (APPROVE_RE.test(text)) {
+    const { fields, extras, callNotes } = pending;
+    await post(`✅ Cleared! Filing *${fields.insured_name || 'the intake'}* now…`);
+    try {
+      const docs = [fillIntakeSheet(fields, extras, callNotes, pending.filename), ...fillTemplates(fields)];
+      const transcriptDoc: FilledDoc = {
+        filename: `Call Transcript - ${fields.insured_name || 'intake'}.txt`,
+        content: Buffer.from(pending.transcript, 'utf8'),
+      };
+      await uploadDocs(web, msg.channel, thread, [docs[1], docs[2], transcriptDoc], '📝 Drafted for the file:');
+
+      const crm = await fileIntakeToCrm(fields, docs, {
+        base64: pending.audioB64,
+        mediaType: pending.audioType,
+        filename: pending.filename,
+      });
+      await post(
+        crm.ok
+          ? `📁 Atlas PA: ${crm.created ? 'created new claim' : 'added to existing claim'} *${crm.claimId}* — Intake Sheet, letters, and the recording attached.`
+          : `📁 Atlas PA filing skipped — ${crm.reason}`,
+      );
+
+      const cw = await createClaimWizardLead(fields, extras, callNotes);
+      await post(
+        cw.ok
+          ? `🧙 ClaimWizard: new lead created${cw.leadId ? ` (*${cw.leadId}*)` : ''}.`
+          : `🧙 ClaimWizard: skipped — ${cw.reason}`,
+      );
+
+      pendingIntakes.delete(msg.channel);
+      await post('✅ All done!');
+      sim?.mirrorSlackIntake('done', fields.insured_name || pending.filename);
+    } catch (err) {
+      await postIntakeError(err, post, sim);
+    }
+    return;
+  }
+
+  // Anything else is treated as a correction to the sheet.
+  try {
+    await post('✏️ On it — fixing the sheet…');
+    const patched = await llm.patchIntake(
+      { fields: pending.fields, extras: pending.extras, callNotes: pending.callNotes },
+      text,
+    );
+    pendingIntakes.set(msg.channel, { ...pending, ...patched });
+    await post(fieldSummary(patched.fields) + (patched.callNotes ? `\n🗒️ *Call notes:* ${patched.callNotes}` : ''));
+    await uploadDocs(
+      web,
+      msg.channel,
+      thread,
+      [fillIntakeSheet(patched.fields, patched.extras, patched.callNotes, pending.filename)],
+      '📝 Updated Intake Sheet:',
+    );
+    await post(CLEARANCE_PROMPT.trim());
+  } catch (err) {
+    await postIntakeError(err, post, sim);
+  }
+}
+
+async function postIntakeError(err: unknown, post: PostFn, sim?: Simulation): Promise<void> {
+  const reason = err instanceof llm.LlmUnavailableError ? err.reason : '';
+  const why =
+    reason === 'no_key'
+      ? 'my reading glasses are missing — the server has no ANTHROPIC_API_KEY.'
+      : reason === 'auth'
+        ? 'the Anthropic API key was rejected.'
+        : reason === 'rate_limit_local'
+          ? "I'm a bit overwhelmed right now — try again in a minute."
+          : `something went wrong: ${(err as Error).message}`;
+  await post(`⚠️ Hmm — ${why}`).catch(() => {});
+  sim?.mirrorSlackIntake('failed', (err as Error).message);
+}
+
+async function uploadDocs(
+  web: WebClient,
+  channel: string,
+  thread: string | undefined,
+  docs: FilledDoc[],
+  comment = '📝 Drafted and ready for review:',
+): Promise<void> {
   await web.files.uploadV2({
     channel_id: channel,
     ...(thread ? { thread_ts: thread } : {}),
-    initial_comment: '📝 Drafted and ready for review:',
+    initial_comment: comment,
     file_uploads: docs.map((d) => ({ file: d.content, filename: d.filename })),
   });
 }

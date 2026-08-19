@@ -52,10 +52,15 @@ Slack: Tessa is online via Socket Mode in "<your workspace>" — DM her an intak
 - Open Slack → **Apps** (bottom of the sidebar) → **Tessa** → send her an
   intake form as a photo (JPG/PNG/WebP/GIF, up to 5MB) or a PDF (up to
   10MB). That's it.
-- **Dictation:** she also takes a *recording of the intake phone call*
-  (m4a/mp3/wav/voice note, up to 24MB). Whisper transcribes it, the fields
-  come off the conversation, and she generates the **Intake Sheet** for you —
-  plus the usual documents and the full transcript. Needs `GROQ_API_KEY` in
+- **Dictation / recorded calls:** hit Slack's **mic button** (or upload
+  m4a/mp3/wav, up to 24MB) — record the live call on speaker, repeating the
+  homeowner's answers back, or dictate the finished form afterward. Whisper
+  transcribes, the fields come off the conversation, and Tessa posts the
+  filled **Intake Sheet** as a draft. **Nothing is filed until you approve:**
+  say *approve* to file it into Atlas PA + ClaimWizard (letters + transcript
+  included), tell her a correction ("phone should be …") to fix the sheet, or
+  *cancel* to scrap it. Long call? Slack cuts clips at 5 minutes — just keep
+  recording; she merges all clips into one intake. Needs `GROQ_API_KEY` in
   `.env` (free at console.groq.com/keys).
 - In a channel: `/invite @Tessa`, then @mention her in a message that has the
   photo attached. She only reacts in channels when explicitly @mentioned.
