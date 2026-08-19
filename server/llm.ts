@@ -348,9 +348,11 @@ export async function extractIntakeFromTranscript(
         {
           role: 'user',
           content:
-            'This is a transcript of a phone call between a homeowner and the front desk of Armada Public Adjusting, ' +
-            'a Florida public adjusting firm, about a new property insurance claim. The firm fills a Claim Intake Sheet ' +
-            'from this call. Call record_intake_from_call with every field the call actually states — names and ' +
+            'This is a transcript of a recording from the front desk of Armada Public Adjusting, a Florida public ' +
+            'adjusting firm, about a new property insurance claim. It is either the intake phone call itself ' +
+            '(homeowner + front desk talking) or a staff member dictating the completed intake afterward (often ' +
+            'reading the form aloud, label then answer). The firm fills a Claim Intake Sheet from it. ' +
+            'Call record_intake_from_call with every field the recording actually states — names and ' +
             'addresses as spoken (fix obvious transcription stumbles like spelled-out letters), phone numbers as ' +
             'digits, dates as written dates, yes/no answers as short phrases. For anything the call never mentions, ' +
             'pass an empty string. Do not guess or invent values. Also write the call_notes summary.\n\n----\n' +

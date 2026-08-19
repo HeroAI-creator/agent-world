@@ -160,7 +160,8 @@ async function handleMessage(
   sim?: Simulation,
 ): Promise<void> {
   if (msg.bot_id || msg.subtype === 'bot_message') return; // never answer bots (or herself)
-  if (msg.subtype && msg.subtype !== 'file_share') return; // ignore edits, joins, deletions…
+  // slack_audio = a voice clip recorded with Slack's own mic button
+  if (msg.subtype && msg.subtype !== 'file_share' && msg.subtype !== 'slack_audio') return; // ignore edits, joins, deletions…
   const isDm = msg.channel_type === 'im';
   const mentioned = botUserId !== '' && (msg.text || '').includes(`<@${botUserId}>`);
   if (!isDm && !mentioned) return; // in channels/group DMs she only acts when @mentioned
