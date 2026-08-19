@@ -391,7 +391,13 @@ async function handlePendingText(
         filename: `Call Transcript - ${fields.insured_name || 'intake'}.txt`,
         content: Buffer.from(pending.transcript, 'utf8'),
       };
-      await uploadDocs(web, msg.channel, thread, [docs[1], docs[2], transcriptDoc], '📝 Drafted for the file:');
+      await uploadDocs(
+        web,
+        msg.channel,
+        thread,
+        [docs[1], docs[2], transcriptDoc],
+        '📄 Your two documents — *Welcome Letter* + *Notice to Insurance* (transcript included):',
+      );
 
       const crm = await fileIntakeToCrm(fields, docs, {
         base64: pending.audioB64,
