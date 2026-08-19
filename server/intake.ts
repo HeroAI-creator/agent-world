@@ -72,6 +72,27 @@ export function fillTemplates(f: IntakeFields): FilledDoc[] {
   ];
 }
 
+/** Fill the generated Claim Intake Sheet — used when the intake arrived as a
+ *  call recording, so there's no paper form to point a camera at. */
+export function fillIntakeSheet(f: IntakeFields, callNotes: string, sourceNote: string): FilledDoc {
+  const intakeDate = new Date().toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    timeZone: 'America/New_York',
+  });
+  const data = {
+    ...templateData(f),
+    carrier: f.carrier,
+    phone: f.phone,
+    email: f.email,
+    intake_date: intakeDate,
+    source_note: sourceNote,
+    call_notes: callNotes || '—',
+  };
+  return { filename: `Intake Sheet - ${fileSlug(f)}.docx`, content: renderDocx('intake-sheet.docx', data) };
+}
+
 function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }

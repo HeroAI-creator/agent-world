@@ -1,12 +1,13 @@
 // Tessa on Slack — a Socket Mode bot that runs the Armada intake pipeline.
 //
-// DM Tessa a photo or PDF of an intake form (or @mention her with one in a channel
-// she's been invited to): Claude reads the form, the Welcome Letter + Notice
-// to Insurance are filled and uploaded straight back into the conversation
-// for review (right in the chat for DMs; in a thread when in a channel),
-// and the intake is filed into Atlas PA. Nothing is emailed — the
-// documents stay in Slack (unlike the in-game upload panel, which emails the
-// firm via Resend). Text-only DMs get a short in-character reply.
+// DM Tessa an intake as a photo/PDF of the form — or a RECORDING of the
+// intake phone call (dictation: Whisper transcribes, Claude extracts, and a
+// fresh Intake Sheet is generated since there's no paper form). Either way
+// the Welcome Letter + Notice to Insurance are filled and uploaded straight
+// back into the conversation for review (right in the chat for DMs; in a
+// thread when in a channel), and the intake is filed into Atlas PA. Nothing
+// is emailed — the documents stay in Slack (unlike the in-game upload panel,
+// which emails the firm via Resend). Text-only DMs get a short reply.
 //
 // Built on @slack/socket-mode + @slack/web-api (not Bolt — Bolt v5 peer-locks
 // to Express 5 types and this server is on Express 4). Socket Mode dials OUT
@@ -19,7 +20,8 @@
 import { SocketModeClient } from '@slack/socket-mode';
 import { WebClient, LogLevel } from '@slack/web-api';
 import * as llm from './llm.js';
-import { fillTemplates, fileIntakeToCrm, type FilledDoc } from './intake.js';
+import { fillIntakeSheet, fillTemplates, fileIntakeToCrm, type FilledDoc } from './intake.js';
+import { transcribeAudio, transcriptionConfigured } from './transcribe.js';
 import type { Simulation } from './simulation.js';
 import type { IntakeFields } from './types.js';
 
@@ -57,11 +59,12 @@ const IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp
 const PDF_TYPE = 'application/pdf';
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // Anthropic's per-image ceiling
 const MAX_PDF_BYTES = 10 * 1024 * 1024; // stays well under the API's 32MB request cap
+const MAX_AUDIO_BYTES = 24 * 1024 * 1024; // Groq Whisper's upload ceiling is 25MB
 
-const TESSA_SYSTEM = `You are Tessa, Armada Public Adjusting's intake agent, chatting in Slack. Warm, competent, brief — 1 to 3 short sentences, the occasional emoji. Your one job: when someone sends a PHOTO or PDF of a claim intake form, you read it, draft the Welcome Letter and the Notice to Insurance, drop them back into the chat, and file the claim into the Atlas PA CRM. If asked anything else, answer briefly and remind them you're happiest when handed an intake form.`;
+const TESSA_SYSTEM = `You are Tessa, Armada Public Adjusting's intake agent, chatting in Slack. Warm, competent, brief — 1 to 3 short sentences, the occasional emoji. Your one job: when someone sends a PHOTO or PDF of a claim intake form — or a RECORDING of the intake phone call — you read or listen to it, fill the intake sheet, draft the Welcome Letter and the Notice to Insurance, drop them back into the chat, and file the claim into the Atlas PA CRM. If asked anything else, answer briefly and remind them you're happiest when handed an intake.`;
 
 const HELP_REPLY =
-  "Hi! I'm Tessa 📋 Send me a photo or PDF of a claim intake form and I'll read it, draft the Welcome Letter + Notice to Insurance right here in the chat, and file the claim into Atlas PA.";
+  "Hi! I'm Tessa 📋 Send me an intake as a *photo or PDF* of the form — or a *recording of the intake call* 🎧 — and I'll fill the intake sheet, draft the Welcome Letter + Notice to Insurance right here in the chat, and file the claim into Atlas PA.";
 
 // Slack redelivers events it thinks we missed; remember what we've handled.
 const seen = new Map<string, number>();
@@ -79,6 +82,11 @@ function alreadyHandled(msg: IncomingMessage): boolean {
 function isIntakeFile(f: SlackFile): boolean {
   const mt = f.mimetype || '';
   return (IMAGE_TYPES.has(mt) || mt === PDF_TYPE) && Boolean(f.url_private_download);
+}
+
+/** Call recordings and voice notes: m4a, mp3, wav, ogg/opus, webm, aac, amr… */
+function isIntakeAudio(f: SlackFile): boolean {
+  return (f.mimetype || '').startsWith('audio/') && Boolean(f.url_private_download);
 }
 
 /** The nine fields, Slack-mrkdwn formatted, so a human can eyeball-verify the
@@ -165,10 +173,11 @@ async function handleMessage(
     await web.chat.postMessage({ channel: msg.channel, ...(thread ? { thread_ts: thread } : {}), text });
   };
 
+  const audioFiles = (msg.files || []).filter(isIntakeAudio);
   const intakeFiles = (msg.files || []).filter(isIntakeFile);
-  if (intakeFiles.length === 0) {
+  if (intakeFiles.length === 0 && audioFiles.length === 0) {
     if ((msg.files || []).length > 0) {
-      await post('I can read *photos or PDFs* of intake forms — JPG, PNG, WebP, GIF, or PDF. Mind re-sending it as one of those? 📋');
+      await post('I can take intakes as *photos or PDFs* of the form (JPG, PNG, WebP, GIF, PDF) — or a *call recording* (m4a, mp3, wav, voice note). Mind re-sending one of those? 📋');
       return;
     }
     // Text-only message → a short in-character reply (canned when the LLM is unavailable).
@@ -187,6 +196,9 @@ async function handleMessage(
 
   for (const intakeFile of intakeFiles) {
     await runIntake(intakeFile, msg, post, web, botToken, thread, sim);
+  }
+  for (const audio of audioFiles) {
+    await runAudioIntake(audio, msg, post, web, botToken, thread, sim);
   }
 }
 
@@ -237,6 +249,78 @@ async function runIntake(
     sim?.mirrorSlackIntake('done', fields.insured_name || filename);
   } catch (err) {
     const reason = err instanceof llm.LlmUnavailableError ? err.reason : 'api_error';
+    const why =
+      reason === 'no_key'
+        ? 'my reading glasses are missing — the server has no ANTHROPIC_API_KEY.'
+        : reason === 'auth'
+          ? 'the Anthropic API key was rejected.'
+          : reason === 'rate_limit_local'
+            ? "I'm a bit overwhelmed right now — try again in a minute."
+            : `something went wrong: ${(err as Error).message}`;
+    await post(`⚠️ Hmm — ${why}`).catch(() => {});
+    sim?.mirrorSlackIntake('failed', (err as Error).message);
+  }
+}
+
+/** Dictation intake: a recording of the homeowner <-> front desk call comes in,
+ *  Whisper writes the transcript, Claude pulls the fields, and Tessa fills the
+ *  Intake Sheet + Welcome Letter + carrier Notice and files it all — same
+ *  finish line as a photo intake, no paper form required. */
+async function runAudioIntake(
+  file: SlackFile,
+  msg: IncomingMessage,
+  post: PostFn,
+  web: WebClient,
+  botToken: string,
+  thread: string | undefined,
+  sim?: Simulation,
+): Promise<void> {
+  const filename = file.name || 'call-recording.m4a';
+  try {
+    if (!transcriptionConfigured()) {
+      await post("I got the recording, but my ears aren't set up yet — the server needs a GROQ_API_KEY (free at console.groq.com/keys) before I can transcribe calls. 🎧");
+      return;
+    }
+    await post(`🎧 Got the recording — listening to *${filename}*… (a longer call takes a minute)`);
+    sim?.mirrorSlackIntake('received', filename);
+
+    if ((file.size || 0) > MAX_AUDIO_BYTES) {
+      await post('That recording is over 24MB — more than I can transcribe in one go. Could you trim or re-export it a bit smaller?');
+      sim?.mirrorSlackIntake('failed', `${filename} was too large`);
+      return;
+    }
+
+    const resp = await fetch(file.url_private_download!, {
+      headers: { Authorization: `Bearer ${botToken}` },
+    });
+    if (!resp.ok) throw new Error(`could not download the file from Slack (HTTP ${resp.status})`);
+    const audio = Buffer.from(await resp.arrayBuffer());
+
+    const transcript = await transcribeAudio(audio, filename, file.mimetype || 'audio/mpeg');
+
+    const { fields, callNotes } = await llm.extractIntakeFromTranscript(transcript);
+    await post(fieldSummary(fields) + (callNotes ? `\n🗒️ *Call notes:* ${callNotes}` : ''));
+
+    const docs = [fillIntakeSheet(fields, callNotes, filename), ...fillTemplates(fields)];
+    const transcriptDoc: FilledDoc = {
+      filename: `Call Transcript - ${fields.insured_name || 'intake'}.txt`,
+      content: Buffer.from(transcript, 'utf8'),
+    };
+    await uploadDocs(web, msg.channel, thread, [...docs, transcriptDoc]);
+
+    const crm = await fileIntakeToCrm(fields, docs, {
+      base64: audio.toString('base64'),
+      mediaType: file.mimetype || 'audio/mpeg',
+      filename,
+    });
+    await post(
+      crm.ok
+        ? `📁 Bram filed it into Atlas PA — ${crm.created ? 'created new claim' : 'added to existing claim'} *${crm.claimId}* (recording attached). ✅ All done!`
+        : `📁 Atlas PA filing skipped — ${crm.reason} ✅ Everything else is done!`,
+    );
+    sim?.mirrorSlackIntake('done', fields.insured_name || filename);
+  } catch (err) {
+    const reason = err instanceof llm.LlmUnavailableError ? err.reason : '';
     const why =
       reason === 'no_key'
         ? 'my reading glasses are missing — the server has no ANTHROPIC_API_KEY.'

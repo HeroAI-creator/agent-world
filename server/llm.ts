@@ -271,6 +271,75 @@ export async function extractAppointments(text: string, today: string): Promise<
   }
 }
 
+// ---- Dictation intake: extract fields from a call transcript ----
+//
+// A recorded homeowner <-> front desk call is transcribed (server/transcribe.ts),
+// then this pulls the same nine intake fields off the conversation, plus short
+// call notes for the generated Intake Sheet. Same forced-tool discipline as the
+// photo path: never invent, empty string when the call never says it.
+
+const TRANSCRIPT_TOOL: Anthropic.Tool = {
+  name: 'record_intake_from_call',
+  description: 'Record the claim-intake fields heard in a phone call transcript, plus brief call notes.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      ...(INTAKE_TOOL.input_schema.properties as Record<string, unknown>),
+      call_notes: {
+        type: 'string',
+        description:
+          'Two to four sentences of notes a front desk would keep: what happened to the property, urgency, anything promised to the homeowner, follow-ups discussed. Plain prose.',
+      },
+    },
+    required: [...(INTAKE_TOOL.input_schema.required as string[]), 'call_notes'],
+  },
+};
+
+export async function extractIntakeFromTranscript(
+  transcript: string,
+): Promise<{ fields: IntakeFields; callNotes: string }> {
+  pruneWindow();
+  if (callTimes.length >= maxCallsPerMin()) {
+    throw new LlmUnavailableError(`local rate cap reached (${maxCallsPerMin()} calls/min)`, 'rate_limit_local');
+  }
+  const anthropic = getClient();
+  callTimes.push(Date.now());
+  totals.calls += 1;
+  try {
+    const response = await anthropic.messages.create({
+      model: INTAKE_MODEL,
+      max_tokens: 1200,
+      tools: [TRANSCRIPT_TOOL],
+      tool_choice: { type: 'tool', name: 'record_intake_from_call' },
+      messages: [
+        {
+          role: 'user',
+          content:
+            'This is a transcript of a phone call between a homeowner and the front desk of Armada Public Adjusting, ' +
+            'a Florida public adjusting firm, about a new property insurance claim. Call record_intake_from_call with ' +
+            'every field the call actually states — names and addresses as spoken (fix obvious transcription stumbles ' +
+            'like spelled-out letters), phone numbers as digits, dates as written dates. For anything the call never ' +
+            'mentions, pass an empty string. Do not guess or invent values. Also write the call_notes summary.\n\n----\n' +
+            transcript,
+        },
+      ],
+    });
+    totals.inputTokens += response.usage.input_tokens;
+    totals.outputTokens += response.usage.output_tokens;
+    const block = response.content.find((b) => b.type === 'tool_use');
+    if (!block || block.type !== 'tool_use') {
+      throw new LlmUnavailableError('model did not return structured intake fields', 'api_error');
+    }
+    const raw = block.input as Partial<Record<keyof IntakeFields, unknown>> & { call_notes?: unknown };
+    return {
+      fields: normalizeIntake(raw),
+      callNotes: typeof raw.call_notes === 'string' ? raw.call_notes.trim() : '',
+    };
+  } catch (err) {
+    throw toLlmError(err);
+  }
+}
+
 // ---- Mira's Slack calendar desk: parse one scheduling command ----
 //
 // Front desk chats naturally ("put an inspection on Andrew's and my calendar
