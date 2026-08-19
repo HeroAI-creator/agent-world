@@ -15,7 +15,7 @@ import { join } from 'node:path';
 import PizZip from 'pizzip';
 import Docxtemplater from 'docxtemplater';
 import { Resend } from 'resend';
-import type { IntakeFields } from './types.js';
+import type { IntakeExtras, IntakeFields } from './types.js';
 
 export interface FilledDoc {
   filename: string;
@@ -72,23 +72,55 @@ export function fillTemplates(f: IntakeFields): FilledDoc[] {
   ];
 }
 
-/** Fill the generated Claim Intake Sheet — used when the intake arrived as a
- *  call recording, so there's no paper form to point a camera at. */
-export function fillIntakeSheet(f: IntakeFields, callNotes: string, sourceNote: string): FilledDoc {
+/** Fill the generated Claim Intake Sheet (a replica of the firm's 27-field
+ *  paper form) — used when the intake arrived as a call recording, so there's
+ *  no paper form to point a camera at. Unheard fields stay blank for the
+ *  front desk to hand-fill. */
+export function fillIntakeSheet(f: IntakeFields, x: IntakeExtras, callNotes: string, sourceNote: string): FilledDoc {
   const intakeDate = new Date().toLocaleDateString('en-US', {
     year: 'numeric',
     month: 'long',
     day: 'numeric',
     timeZone: 'America/New_York',
   });
+  const style = x.claim_style.toLowerCase();
+  const box = (on: boolean) => (on ? '[X]' : '[   ]');
   const data = {
-    ...templateData(f),
-    carrier: f.carrier,
+    insured: f.insured_name,
     phone: f.phone,
     email: f.email,
+    // The form asks for the policy address, with loss address only if different.
+    policy_address: x.policy_address || f.loss_address,
+    loss_address_diff: x.policy_address && x.policy_address !== f.loss_address ? f.loss_address : '',
+    damage_description: x.damage_description || f.cause_of_loss,
+    interior_damage: x.interior_damage,
+    date_of_loss: f.date_of_loss,
+    who_discovered: x.who_discovered,
+    gated_community: x.gated_community,
+    gate_code: x.gate_code,
+    carrier: f.carrier,
+    policy_claim: [f.policy_number && `Policy: ${f.policy_number}`, f.claim_number && `Claim: ${f.claim_number}`]
+      .filter(Boolean)
+      .join('    '),
+    insurance_source: x.insurance_source,
+    prior_claims: x.prior_claims,
+    mortgage: x.mortgage,
+    emergency_box: box(style.startsWith('emerg')),
+    non_emergency_box: box(style.startsWith('non')),
+    supplemental_box: box(style.startsWith('supp')),
+    stories: x.stories,
+    roof_type_age: x.roof_type_age,
+    roof_slope: x.roof_slope,
+    tarp: x.tarp,
+    removal_needed: x.removal_needed,
+    habitable: x.habitable,
+    emergency_services: x.emergency_services,
+    repairs_made: x.repairs_made,
+    source_inspector: x.source_inspector,
+    referral: x.referral,
     intake_date: intakeDate,
     source_note: sourceNote,
-    call_notes: callNotes || '—',
+    call_notes: callNotes || '',
   };
   return { filename: `Intake Sheet - ${fileSlug(f)}.docx`, content: renderDocx('intake-sheet.docx', data) };
 }

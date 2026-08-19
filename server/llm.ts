@@ -2,7 +2,7 @@
 // All LLM access happens here, server-side only. The key never reaches the browser.
 
 import Anthropic from '@anthropic-ai/sdk';
-import type { Appointment, IntakeFields, LlmStats, MiraCommand } from './types.js';
+import type { Appointment, IntakeExtras, IntakeFields, LlmStats, MiraCommand } from './types.js';
 
 // Claude Haiku 4.5 pricing, $ per million tokens.
 const PRICE_IN_PER_MTOK = 1.0;
@@ -278,26 +278,59 @@ export async function extractAppointments(text: string, today: string): Promise<
 // call notes for the generated Intake Sheet. Same forced-tool discipline as the
 // photo path: never invent, empty string when the call never says it.
 
+const EXTRAS_KEYS: Array<keyof IntakeExtras> = [
+  'policy_address', 'damage_description', 'interior_damage', 'who_discovered', 'gated_community', 'gate_code',
+  'insurance_source', 'prior_claims', 'mortgage', 'claim_style', 'stories', 'roof_type_age', 'roof_slope',
+  'tarp', 'removal_needed', 'habitable', 'emergency_services', 'repairs_made', 'source_inspector', 'referral',
+];
+
+const str = (desc: string) => ({ type: 'string' as const, description: desc });
+
 const TRANSCRIPT_TOOL: Anthropic.Tool = {
   name: 'record_intake_from_call',
-  description: 'Record the claim-intake fields heard in a phone call transcript, plus brief call notes.',
+  description: "Record everything the firm's Claim Intake Sheet asks, as heard in a phone call transcript.",
   input_schema: {
     type: 'object',
     properties: {
       ...(INTAKE_TOOL.input_schema.properties as Record<string, unknown>),
-      call_notes: {
-        type: 'string',
-        description:
-          'Two to four sentences of notes a front desk would keep: what happened to the property, urgency, anything promised to the homeowner, follow-ups discussed. Plain prose.',
-      },
+      policy_address: str('Address on the policy, ONLY if stated as different from the loss address. Else empty.'),
+      damage_description: str('Type of / description of the damage in a short phrase (e.g. "wind — shingles off over master bedroom").'),
+      interior_damage: str('Interior damage and where, if any was mentioned (e.g. "yes — ceiling stain in master bedroom").'),
+      who_discovered: str('Who discovered the loss.'),
+      gated_community: str('"Gated" or "Non-gated" if mentioned.'),
+      gate_code: str('Gate code if given.'),
+      insurance_source: str('Whether they bought the insurance themselves or the mortgage company provided/forced it.'),
+      prior_claims: str('Any prior claims in the last 5 years, as stated.'),
+      mortgage: str('Mortgage company / whether the home has a mortgage, as stated.'),
+      claim_style: str('Exactly one of "Emergency", "Non-Emergency", "Supplemental" if determinable from the call, else empty.'),
+      stories: str('How many stories the home has.'),
+      roof_type_age: str('Roof type and/or age (e.g. "shingle, ~12 years").'),
+      roof_slope: str('Slope/pitch of the roof if mentioned.'),
+      tarp: str('Whether a tarp is needed or already installed.'),
+      removal_needed: str('Anything that needs to be removed (debris, tree, contents).'),
+      habitable: str('Whether the home is habitable/livable.'),
+      emergency_services: str('Any emergency service called (fire dept, water mitigation, etc.).'),
+      repairs_made: str('Whether any repairs have been made already.'),
+      source_inspector: str('Who is the source/inspector/title if named.'),
+      referral: str('How they heard about the firm.'),
+      call_notes: str('Two to four sentences of notes a front desk would keep: what happened, urgency, anything promised to the homeowner, follow-ups discussed. Plain prose.'),
     },
-    required: [...(INTAKE_TOOL.input_schema.required as string[]), 'call_notes'],
+    required: [...(INTAKE_TOOL.input_schema.required as string[]), ...EXTRAS_KEYS, 'call_notes'],
   },
 };
 
+function normalizeExtras(raw: Partial<Record<keyof IntakeExtras, unknown>>): IntakeExtras {
+  const out = {} as IntakeExtras;
+  for (const key of EXTRAS_KEYS) {
+    const v = raw[key];
+    out[key] = typeof v === 'string' ? v.trim() : v == null ? '' : String(v);
+  }
+  return out;
+}
+
 export async function extractIntakeFromTranscript(
   transcript: string,
-): Promise<{ fields: IntakeFields; callNotes: string }> {
+): Promise<{ fields: IntakeFields; extras: IntakeExtras; callNotes: string }> {
   pruneWindow();
   if (callTimes.length >= maxCallsPerMin()) {
     throw new LlmUnavailableError(`local rate cap reached (${maxCallsPerMin()} calls/min)`, 'rate_limit_local');
@@ -308,7 +341,7 @@ export async function extractIntakeFromTranscript(
   try {
     const response = await anthropic.messages.create({
       model: INTAKE_MODEL,
-      max_tokens: 1200,
+      max_tokens: 2000,
       tools: [TRANSCRIPT_TOOL],
       tool_choice: { type: 'tool', name: 'record_intake_from_call' },
       messages: [
@@ -316,10 +349,11 @@ export async function extractIntakeFromTranscript(
           role: 'user',
           content:
             'This is a transcript of a phone call between a homeowner and the front desk of Armada Public Adjusting, ' +
-            'a Florida public adjusting firm, about a new property insurance claim. Call record_intake_from_call with ' +
-            'every field the call actually states — names and addresses as spoken (fix obvious transcription stumbles ' +
-            'like spelled-out letters), phone numbers as digits, dates as written dates. For anything the call never ' +
-            'mentions, pass an empty string. Do not guess or invent values. Also write the call_notes summary.\n\n----\n' +
+            'a Florida public adjusting firm, about a new property insurance claim. The firm fills a Claim Intake Sheet ' +
+            'from this call. Call record_intake_from_call with every field the call actually states — names and ' +
+            'addresses as spoken (fix obvious transcription stumbles like spelled-out letters), phone numbers as ' +
+            'digits, dates as written dates, yes/no answers as short phrases. For anything the call never mentions, ' +
+            'pass an empty string. Do not guess or invent values. Also write the call_notes summary.\n\n----\n' +
             transcript,
         },
       ],
@@ -330,9 +364,11 @@ export async function extractIntakeFromTranscript(
     if (!block || block.type !== 'tool_use') {
       throw new LlmUnavailableError('model did not return structured intake fields', 'api_error');
     }
-    const raw = block.input as Partial<Record<keyof IntakeFields, unknown>> & { call_notes?: unknown };
+    const raw = block.input as Partial<Record<keyof IntakeFields, unknown>> &
+      Partial<Record<keyof IntakeExtras, unknown>> & { call_notes?: unknown };
     return {
       fields: normalizeIntake(raw),
+      extras: normalizeExtras(raw),
       callNotes: typeof raw.call_notes === 'string' ? raw.call_notes.trim() : '',
     };
   } catch (err) {

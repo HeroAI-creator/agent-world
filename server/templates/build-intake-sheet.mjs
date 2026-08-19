@@ -1,7 +1,8 @@
-// Generates intake-sheet.docx — the clean one-page Claim Intake Sheet that
-// Tessa fills when an intake arrives as a CALL RECORDING (photo/PDF intakes
-// already ARE the sheet). Tokens are docxtemplater {placeholders}; each token
-// is emitted as a single run so it can never be split. Run once:
+// Generates intake-sheet.docx — a filled-in replica of the firm's real Claim
+// Intake Sheet (the 27-field form the front desk uses), used when an intake
+// arrives as a CALL RECORDING. Field order and wording mirror the paper form;
+// unheard fields render blank so Brielle can hand-fill them. Tokens are
+// docxtemplater {placeholders}, one run each so they can never split. Run:
 //   node server/templates/build-intake-sheet.mjs
 import { writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -10,50 +11,76 @@ import PizZip from 'pizzip';
 
 const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-const P = (text, { bold = false, size = 22, center = false, color = '000000', spaceAfter = 120 } = {}) =>
-  `<w:p><w:pPr>${center ? '<w:jc w:val="center"/>' : ''}<w:spacing w:after="${spaceAfter}"/></w:pPr>` +
+const run = (text, { bold = false, size = 21, color = '000000' } = {}) =>
   `<w:r><w:rPr>${bold ? '<w:b/>' : ''}<w:sz w:val="${size}"/><w:szCs w:val="${size}"/><w:color w:val="${color}"/></w:rPr>` +
-  `<w:t xml:space="preserve">${esc(text)}</w:t></w:r></w:p>`;
+  `<w:t xml:space="preserve">${esc(text)}</w:t></w:r>`;
 
-const CELL_BORDERS =
-  '<w:tcBorders><w:top w:val="single" w:sz="4" w:color="BFBFBF"/><w:left w:val="single" w:sz="4" w:color="BFBFBF"/>' +
-  '<w:bottom w:val="single" w:sz="4" w:color="BFBFBF"/><w:right w:val="single" w:sz="4" w:color="BFBFBF"/></w:tcBorders>';
+const P = (runs, { center = false, spaceAfter = 110 } = {}) =>
+  `<w:p><w:pPr>${center ? '<w:jc w:val="center"/>' : ''}<w:spacing w:after="${spaceAfter}"/>` +
+  `<w:pBdr><w:bottom w:val="none" w:sz="0" w:space="0" w:color="auto"/></w:pBdr></w:pPr>${runs}</w:p>`;
 
-const cell = (text, { bold = false, width, fill = 'auto' } = {}) =>
-  `<w:tc><w:tcPr><w:tcW w:w="${width}" w:type="dxa"/>${CELL_BORDERS}<w:shd w:val="clear" w:fill="${fill}"/>` +
-  `<w:vAlign w:val="center"/></w:tcPr>` +
-  `<w:p><w:pPr><w:spacing w:before="60" w:after="60"/></w:pPr><w:r><w:rPr>${bold ? '<w:b/>' : ''}<w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr>` +
-  `<w:t xml:space="preserve">${esc(text)}</w:t></w:r></w:p></w:tc>`;
+// One form line: bold label + answer token (+ optional second label/token pair on the same line).
+const line = (label, token, label2, token2) =>
+  P(
+    run(`${label} `, { bold: true }) +
+      run(`{${token}}`) +
+      (label2 ? run(`    ${label2} `, { bold: true }) + run(`{${token2}}`) : ''),
+  );
 
-const row = (label, token) => `<w:tr>${cell(label, { bold: true, width: 2600, fill: 'F2EFE9' })}${cell(`{${token}}`, { width: 6800 })}</w:tr>`;
-
-const FIELDS = [
-  ['Insured Name(s)', 'insured'],
-  ['Loss Address', 'loss_address'],
-  ['Phone', 'phone'],
-  ['Email', 'email'],
-  ['Insurance Carrier', 'carrier'],
-  ['Policy Number', 'policy_number'],
-  ['Claim Number', 'claim_number'],
-  ['Date of Loss', 'date_of_loss'],
-  ['Cause of Loss', 'cause_of_loss'],
+const FORM = [
+  ['Insured Name:', 'insured'],
+  ['Phone:', 'phone'],
+  ['E-mail:', 'email'],
+  ['Policy Address:', 'policy_address'],
+  ['Loss Address (If different):', 'loss_address_diff'],
+  ['Type of/ Describe Damage:', 'damage_description'],
+  ['Any interior damage? If so, where:', 'interior_damage'],
+  ['Date of Loss:', 'date_of_loss'],
+  ['Who discovered the loss:', 'who_discovered'],
+  ['Gated or Non-gated Community:', 'gated_community', 'Code:', 'gate_code'],
+  ['Insurance Company:', 'carrier'],
+  ['Policy # and Claim #:', 'policy_claim'],
+  ['Did you buy your insurance, or did your mortgage provide it for you?', 'insurance_source'],
+  ['Any prior claims in the last 5 years:', 'prior_claims'],
+  ['Mortgage:', 'mortgage'],
 ];
+
+const FORM2 = [
+  ['How many stories:', 'stories'],
+  ['Type of Roof/Age:', 'roof_type_age'],
+  ['Slope/Pitch of the roof:', 'roof_slope'],
+  ['Is a tarp needed/Installed:', 'tarp'],
+  ['Anything need to be removed:', 'removal_needed'],
+  ['Is it habitable/livable:', 'habitable'],
+  ['Any emergency service called:', 'emergency_services'],
+  ['Have any repairs been made:', 'repairs_made'],
+  ['Who is the source/inspector/title:', 'source_inspector'],
+  ['How did you hear about us:', 'referral'],
+];
+
+const claimStyleLine = P(
+  run('Claim Style:   ', { bold: true }) +
+    run('{emergency_box}') +
+    run(' Emergency      ') +
+    run('{non_emergency_box}') +
+    run(' Non-Emergency      ') +
+    run('{supplemental_box}') +
+    run(' Supplemental'),
+);
 
 const documentXml =
   '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
   '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>' +
-  P('ARMADA PUBLIC ADJUSTING', { bold: true, size: 32, center: true, spaceAfter: 40 }) +
-  P('Claim Intake Sheet', { bold: true, size: 26, center: true, spaceAfter: 60 }) +
-  P('Prepared {intake_date} — transcribed from a recorded intake call ({source_note})', { size: 18, center: true, color: '777777', spaceAfter: 240 }) +
-  `<w:tbl><w:tblPr><w:tblW w:w="9400" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr>` +
-  `<w:tblGrid><w:gridCol w:w="2600"/><w:gridCol w:w="6800"/></w:tblGrid>` +
-  FIELDS.map(([label, token]) => row(label, token)).join('') +
-  '</w:tbl>' +
-  P('', { spaceAfter: 120 }) +
-  P('Call Notes', { bold: true, size: 24, spaceAfter: 80 }) +
-  P('{call_notes}', { size: 22, spaceAfter: 240 }) +
-  P('Verify every field against the recording before sending anything to the carrier.', { size: 16, color: '999999' }) +
-  '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1080" w:right="1260" w:bottom="1080" w:left="1260"/></w:sectPr>' +
+  P(run('ARMADA PUBLIC ADJUSTING', { bold: true, size: 30 }), { center: true, spaceAfter: 30 }) +
+  P(run('Claim Intake Sheet', { bold: true, size: 25 }), { center: true, spaceAfter: 40 }) +
+  P(run('Prepared {intake_date} — transcribed from a recorded intake call ({source_note})', { size: 16, color: '777777' }), { center: true, spaceAfter: 200 }) +
+  FORM.map(([l, t, l2, t2]) => line(l, t, l2, t2)).join('') +
+  claimStyleLine +
+  FORM2.map(([l, t]) => line(l, t)).join('') +
+  P(run('Notes:', { bold: true, size: 22 }), { spaceAfter: 60 }) +
+  P(run('{call_notes}'), { spaceAfter: 200 }) +
+  P(run('Verify every field against the recording before sending anything to the carrier.', { size: 15, color: '999999' })) +
+  '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="900" w:right="1100" w:bottom="900" w:left="1100"/></w:sectPr>' +
   '</w:body></w:document>';
 
 const contentTypes =

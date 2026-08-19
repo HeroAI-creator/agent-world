@@ -221,6 +221,32 @@ export interface Appointment {
   durationMin: number;
 }
 
+/** The intake-sheet fields BEYOND the core nine — everything else the firm's
+ *  paper Claim Intake Sheet asks, heard off the recorded call ('' = unsaid). */
+export interface IntakeExtras {
+  policy_address: string;
+  damage_description: string;
+  interior_damage: string;
+  who_discovered: string;
+  gated_community: string;
+  gate_code: string;
+  insurance_source: string;
+  prior_claims: string;
+  mortgage: string;
+  /** Emergency | Non-Emergency | Supplemental | '' */
+  claim_style: string;
+  stories: string;
+  roof_type_age: string;
+  roof_slope: string;
+  tarp: string;
+  removal_needed: string;
+  habitable: string;
+  emergency_services: string;
+  repairs_made: string;
+  source_inspector: string;
+  referral: string;
+}
+
 /** One parsed calendar command for Mira's Slack desk (create/edit/confirm/cancel/list). */
 export interface MiraCommand {
   action: 'create' | 'edit' | 'confirm' | 'cancel' | 'list' | 'other';

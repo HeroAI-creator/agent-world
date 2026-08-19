@@ -298,10 +298,10 @@ async function runAudioIntake(
 
     const transcript = await transcribeAudio(audio, filename, file.mimetype || 'audio/mpeg');
 
-    const { fields, callNotes } = await llm.extractIntakeFromTranscript(transcript);
+    const { fields, extras, callNotes } = await llm.extractIntakeFromTranscript(transcript);
     await post(fieldSummary(fields) + (callNotes ? `\n🗒️ *Call notes:* ${callNotes}` : ''));
 
-    const docs = [fillIntakeSheet(fields, callNotes, filename), ...fillTemplates(fields)];
+    const docs = [fillIntakeSheet(fields, extras, callNotes, filename), ...fillTemplates(fields)];
     const transcriptDoc: FilledDoc = {
       filename: `Call Transcript - ${fields.insured_name || 'intake'}.txt`,
       content: Buffer.from(transcript, 'utf8'),
